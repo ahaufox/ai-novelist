@@ -48,8 +48,8 @@ provider:
     url: https://api.deepseek.com/v1
     favoriteModels:
       chat:
-        deepseek-chat: 128000
-        deepseek-reasoner: 128000
+        deepseek-v4-flash: 1000000
+        deepseek-v4-pro: 1000000
       embedding: {}
       other: {}
     builtin: true
