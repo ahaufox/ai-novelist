@@ -4,39 +4,29 @@
 
 // ==================== Auth API 类型 ====================
 
-/** 登录请求 */
-export interface LoginRequest {
-  username: string; // 邮箱地址
-  password: string;
+/** 发送验证码请求（注册/重置共用） */
+export interface SendCodeRequest {
+  email: string;
 }
 
 /** 注册请求 */
 export interface RegisterRequest {
   email: string;
   password: string;
+  code: string;
 }
 
-/** Token 刷新请求 */
-export interface RefreshTokenRequest {
-  refresh_token: string;
-}
-
-/** 忘记密码请求 */
-export interface ForgotPasswordRequest {
-  email: string;
+/** 登录请求 */
+export interface LoginRequest {
+  username: string; // 邮箱地址
+  password: string;
 }
 
 /** 重置密码请求 */
 export interface ResetPasswordRequest {
-  token: string;
+  email: string;
+  code: string;
   password: string;
-}
-
-/** 认证 Token 响应 */
-export interface AuthTokens {
-  access_token: string;
-  refresh_token?: string;
-  token_type: string;
 }
 
 /** 用户信息 */
@@ -46,16 +36,6 @@ export interface UserInfo {
   is_active: boolean;
   is_superuser: boolean;
   is_verified: boolean;
-}
-
-/** 认证状态 */
-export interface AuthState {
-  user: UserInfo | null;
-  accessToken: string | null;
-  refreshToken: string | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  error: string | null;
 }
 
 /** API 错误响应 */

@@ -2,13 +2,6 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import httpClient from '../utils/httpClient';
 import type { UserInfo } from '../types/api';
 
-/**
- * Auth Redux Slice
- * 
- * Token 完全由后端管理（data/auth/tokens.json），前端不触碰 localStorage。
- * 前端只关心：是否已登录、用户信息、登录/登出操作。
- */
-
 // ==================== State ====================
 
 export interface AuthState {
@@ -16,8 +9,7 @@ export interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
-  initialized: boolean; // 启动时是否已检查过登录状态
-  registerSuccess: boolean; // 注册成功标志
+  initialized: boolean;
 }
 
 const initialState: AuthState = {
@@ -26,12 +18,11 @@ const initialState: AuthState = {
   isLoading: false,
   error: null,
   initialized: false,
-  registerSuccess: false,
 };
 
 // ==================== Async Thunks ====================
 
-/** 检查登录状态（应用启动时调用） */
+/** 检查登录状态（应用启动时） */
 export const checkAuthStatusAsync = createAsyncThunk(
   'auth/checkStatus',
   async (_, { rejectWithValue }) => {
@@ -83,19 +74,6 @@ export const logoutAsync = createAsyncThunk(
   },
 );
 
-/** 注册 */
-export const registerAsync = createAsyncThunk(
-  'auth/register',
-  async ({ email, password }: { email: string; password: string }, { rejectWithValue }) => {
-    try {
-      const data = await httpClient.post('/api/auth/register', { email, password });
-      return data;
-    } catch (err: any) {
-      return rejectWithValue(err.message || '注册失败');
-    }
-  },
-);
-
 // ==================== Slice ====================
 
 const authSlice = createSlice({
@@ -104,9 +82,6 @@ const authSlice = createSlice({
   reducers: {
     clearError(state) {
       state.error = null;
-    },
-    clearRegisterSuccess(state) {
-      state.registerSuccess = false;
     },
   },
   extraReducers: (builder) => {
@@ -154,25 +129,11 @@ const authSlice = createSlice({
       state.user = null;
     });
     builder.addCase(logoutAsync.rejected, (state) => {
-      // 即使后端调用失败，也清除前端状态
       state.isAuthenticated = false;
       state.user = null;
-    });
-    // --- register ---
-    builder.addCase(registerAsync.pending, (state) => {
-      state.isLoading = true;
-      state.error = null;
-    });
-    builder.addCase(registerAsync.fulfilled, (state) => {
-      state.isLoading = false;
-      state.registerSuccess = true;
-    });
-    builder.addCase(registerAsync.rejected, (state, action) => {
-      state.isLoading = false;
-      state.error = action.payload as string;
     });
   },
 });
 
-export const { clearError, clearRegisterSuccess } = authSlice.actions;
+export const { clearError } = authSlice.actions;
 export default authSlice.reducer;
