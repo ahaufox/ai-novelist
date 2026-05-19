@@ -37,3 +37,6 @@ userignore: |
   #.userignore
   #.aiignore
   #.gitignore
+
+env: |
+  BUILTIN_API_KEY=sk-123

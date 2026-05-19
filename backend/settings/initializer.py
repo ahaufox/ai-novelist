@@ -71,10 +71,11 @@ def initialize_directories_and_files():
     uploads_dir = Path(settings.UPLOADS_DIR)
     temp_dir = Path(settings.TEMP_DIR)
     skills_dir = Path(settings.SKILLS_DIR)
+    auth_dir = settings.AUTH_TOKEN_DIR
     env_file = settings.ENV_FILE_PATH
 
     # 确保所有目录存在
-    directories = [base_dir, config_dir, chromadb_dir, db_dir, uploads_dir, temp_dir, skills_dir, env_file.parent]
+    directories = [base_dir, config_dir, chromadb_dir, db_dir, uploads_dir, temp_dir, skills_dir, auth_dir, env_file.parent]
     for directory in directories:
         os.makedirs(directory, exist_ok=True)
 

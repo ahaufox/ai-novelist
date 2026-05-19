@@ -149,6 +149,9 @@ function App() {
     setPreparing(true);
     try {
       await PrepareEnvironment();
+      // 环境准备完成后重新检查项目部署状态，刷新「下载启动」按钮状态
+      const d = await IsProjectDeployed();
+      setDeployed(d);
     } catch (err: any) {
       const msg = err?.message || String(err);
       dispatch(addLog(`环境准备失败: ${msg}\n`));
@@ -300,7 +303,7 @@ function App() {
         ) : (
           <iframe
             className="website-frame"
-            src="https://denghuominghui.cn/"
+            src="https://denghuominghui.top/"
             title="官网"
             sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
           />

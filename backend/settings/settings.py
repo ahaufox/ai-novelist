@@ -41,6 +41,9 @@ class Settings:
         self.TEMP_DIR: str = str(Path(self.DATA_DIR) / "temp")
         # Skills目录
         self.SKILLS_DIR: str = str(Path(self.DATA_DIR) / "skills")
+        # 认证 token 目录
+        self.AUTH_TOKEN_DIR: Path = Path(self.DATA_DIR) / "auth"
+        self.AUTH_TOKEN_FILE: Path = self.AUTH_TOKEN_DIR / "tokens.json"
         
         # 可执行文件路径
         self.NODE_EXECUTABLE: str = self._get_executable('node.exe')
@@ -193,7 +196,54 @@ class Settings:
     def remove_api_key_from_env(self, env_key: str) -> bool:
         return self.env_manager.remove_api_key(env_key)
 
+    # ==================== Token 存储管理 (data/auth/tokens.json) ====================
+
+    def save_tokens(self, access_token: str, refresh_token: Optional[str] = None):
+        """保存 token 到 data/auth/tokens.json"""
+        data = {"access_token": access_token}
+        if refresh_token:
+            data["refresh_token"] = refresh_token
+        # 写入临时文件后原子重命名，避免写一半崩溃导致文件损坏
+        tmp = self.AUTH_TOKEN_FILE.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        tmp.replace(self.AUTH_TOKEN_FILE)
+        logger.info("Token 已持久化到 %s", self.AUTH_TOKEN_FILE)
+
+    def load_tokens(self) -> dict:
+        """从 data/auth/tokens.json 加载 token"""
+        if not self.AUTH_TOKEN_FILE.exists():
+            return {}
+        try:
+            with open(self.AUTH_TOKEN_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error("读取 token 文件失败: %s", e)
+            return {}
+
+    def clear_tokens(self):
+        """清除持久化的 token"""
+        if self.AUTH_TOKEN_FILE.exists():
+            self.AUTH_TOKEN_FILE.unlink()
+        logger.info("Token 已清除")
+
+    def get_access_token(self) -> Optional[str]:
+        """获取存储的 access_token"""
+        tokens = self.load_tokens()
+        return tokens.get("access_token")
+
+    def get_refresh_token(self) -> Optional[str]:
+        """获取存储的 refresh_token"""
+        tokens = self.load_tokens()
+        return tokens.get("refresh_token")
+
+    # ==================== Provider Key 获取 ====================
+
     def get_provider_key(self, provider: str) -> Optional[str]:
+        # 内置提供商特殊处理：使用 JWT access_token 作为 api_key
+        if provider == "builtin":
+            return self.get_access_token()
+
         # 从配置中获取 env_key
         env_key = self.get_config("provider", provider, "env_key", default=None)
         if not env_key:

@@ -1,12 +1,8 @@
 package updater
 
 import (
-	"context"
-	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/storage/memory"
 	"gopkg.in/yaml.v3"
 )
 
@@ -269,124 +266,46 @@ func SaveConfig(cfg *Config) error {
 	return os.WriteFile(configPath(), data, 0644)
 }
 
-func parseGiteeRepo(remoteURL string) (owner, repo string, err error) {
-	remoteURL = strings.TrimSuffix(remoteURL, ".git")
-	if strings.Contains(remoteURL, "gitee.com") {
-		parts := strings.Split(remoteURL, "/")
-		if len(parts) >= 2 {
-			owner = parts[len(parts)-2]
-			repo = parts[len(parts)-1]
-			return owner, repo, nil
-		}
-	}
-	return "", "", fmt.Errorf("无法解析 gitee 仓库地址: %s", remoteURL)
-}
-
+// GetRemoteLatestCommit 通过 git ls-remote 获取远程仓库指定分支的最新 commit
 func GetRemoteLatestCommit(remoteURL, branch string, logger Logger) (*CommitInfo, error) {
 	if logger != nil {
 		logger.Logf("[DEBUG] 开始获取远程提交: remoteURL=%s, branch=%s", remoteURL, branch)
 	}
-	owner, repo, err := parseGiteeRepo(remoteURL)
+
+	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{remoteURL},
+	})
+
+	refs, err := remote.List(&git.ListOptions{})
 	if err != nil {
 		if logger != nil {
-			logger.Logf("[DEBUG] 解析仓库地址失败: %v", err)
+			logger.Logf("[DEBUG] ls-remote 失败: %v", err)
 		}
-		return nil, err
-	}
-	if logger != nil {
-		logger.Logf("[DEBUG] 解析仓库: owner=%s, repo=%s", owner, repo)
-	}
-	apiURL := fmt.Sprintf("https://gitee.com/api/v5/repos/%s/%s/commits?sha=%s&per_page=1", owner, repo, branch)
-	if logger != nil {
-		logger.Logf("[DEBUG] API URL: %s", apiURL)
-		logger.Logf("[DEBUG] 开始创建 HTTP Client, timeout=30s")
+		return nil, fmt.Errorf("获取远程引用失败: %w", err)
 	}
 
-	dialer := &net.Dialer{Timeout: 30 * time.Second}
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if logger != nil {
-				logger.Logf("[DEBUG] [网络] 开始 TCP 连接: %s", addr)
-			}
-			start := time.Now()
-			conn, err := dialer.DialContext(ctx, network, addr)
-			if logger != nil {
-				logger.Logf("[DEBUG] [网络] TCP 连接 %s 耗时: %v, err=%v", addr, time.Since(start), err)
-			}
-			return conn, err
-		},
-		TLSHandshakeTimeout: 30 * time.Second,
-		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if logger != nil {
-				logger.Logf("[DEBUG] [网络] 开始 TLS 握手: %s", addr)
-			}
-			start := time.Now()
-			conn, err := tls.DialWithDialer(dialer, network, addr, &tls.Config{})
-			if logger != nil {
-				logger.Logf("[DEBUG] [网络] TLS 握手 %s 耗时: %v, err=%v", addr, time.Since(start), err)
-			}
-			return conn, err
-		},
-	}
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   30 * time.Second,
-	}
 	if logger != nil {
-		logger.Logf("[DEBUG] HTTP Client 创建完成, 开始发送 GET 请求...")
-	}
-	start := time.Now()
-	resp, err := client.Get(apiURL)
-	elapsed := time.Since(start)
-	if logger != nil {
-		logger.Logf("[DEBUG] 请求总耗时: %v, err=%v", elapsed, err)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("请求 Gitee API 失败: %w", err)
-	}
-	defer resp.Body.Close()
-	if logger != nil {
-		logger.Logf("[DEBUG] 收到响应: status=%d", resp.StatusCode)
+		logger.Logf("[DEBUG] ls-remote 返回 %d 个引用", len(refs))
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		if logger != nil {
-			logger.Logf("[DEBUG] 响应错误: body=%s", string(body))
+	// 目标引用名: refs/heads/{branch}
+	targetRef := plumbing.NewBranchReferenceName(branch)
+	for _, ref := range refs {
+		if ref.Name() == targetRef {
+			sha := ref.Hash().String()
+			if logger != nil {
+				logger.Logf("[DEBUG] 获取远程提交成功: SHA=%s", sha[:7])
+			}
+			return &CommitInfo{
+				SHA:     sha,
+				Message: "",
+				Date:    "",
+			}, nil
 		}
-		return nil, fmt.Errorf("Gitee API 返回错误 %d: %s", resp.StatusCode, string(body))
 	}
 
-	var commits []struct {
-		SHA    string `json:"sha"`
-		Commit struct {
-			Message string `json:"message"`
-			Author  struct {
-				Date string `json:"date"`
-			} `json:"author"`
-		} `json:"commit"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&commits); err != nil {
-		if logger != nil {
-			logger.Logf("[DEBUG] 解析响应失败: %v", err)
-		}
-		return nil, fmt.Errorf("解析 Gitee API 响应失败: %w", err)
-	}
-	if logger != nil {
-		logger.Logf("[DEBUG] 解析成功, commits数量=%d", len(commits))
-	}
-	if len(commits) == 0 {
-		return nil, fmt.Errorf("远程仓库没有提交记录")
-	}
-	c := commits[0]
-	if logger != nil {
-		logger.Logf("[DEBUG] 获取远程提交成功: SHA=%s", c.SHA[:7])
-	}
-	return &CommitInfo{
-		SHA:     c.SHA,
-		Message: strings.TrimSpace(c.Commit.Message),
-		Date:    c.Commit.Author.Date,
-	}, nil
+	return nil, fmt.Errorf("未找到远程分支 %s", branch)
 }
 
 func GetLocalCommit(projectDir string) (*CommitInfo, error) {
@@ -438,14 +357,6 @@ func CheckUpdateStatus(cfg *Config, logger Logger) (*UpdateStatus, error) {
 	if logger != nil {
 		if status.HasUpdate {
 			logger.Logf("发现新提交: %s", remote.SHA[:7])
-			logger.Logf("提交时间: %s", remote.Date)
-			logger.Logf("提交信息:")
-			for _, line := range strings.Split(remote.Message, "\n") {
-				line = strings.TrimSpace(line)
-				if line != "" {
-					logger.Logf("  %s", line)
-				}
-			}
 		} else {
 			logger.Logf("当前已是最新提交: %s", remote.SHA[:7])
 		}
@@ -675,6 +586,7 @@ func cloneProject(cfg *Config, logger Logger) error {
 		Progress: &logWriter{logger: logger},
 	})
 	if err != nil {
+		logger.Logf("克隆项目失败: %v", err)
 		return fmt.Errorf("克隆项目失败: %w", err)
 	}
 

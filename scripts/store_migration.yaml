@@ -42,6 +42,20 @@ autoApproveSettings: false
 selectedProvider: deepseek
 selectedModel: deepseek-chat
 provider:
+  builtin:
+    name: 内置提供商
+    enable: true
+    url: https://denghuominghui.top/v1
+    favoriteModels:
+      chat: {}
+      embedding:
+        Qwen/Qwen3-Embedding-0.6B:
+          dimensions: 1024
+          max-tokens: 32000
+          per-max-tokens: false
+      other: {}
+    builtin: true
+    env_key: BUILTIN_API_KEY
   deepseek:
     name: deepseek
     enable: true

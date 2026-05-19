@@ -11,6 +11,7 @@ from backend.api.mode_api import router as mode_router
 from backend.api.mcp_api import router as mcp_router
 from backend.api.checkpoint_api import checkpoint_router
 from backend.api.websocket_api import router as ws_router
+from backend.api.auth_api import router as auth_router
 
 __all__ = [
     "settings",
@@ -25,5 +26,6 @@ __all__ = [
     "mode_router",
     "mcp_router",
     "checkpoint_router",
-    "ws_router"
+    "ws_router",
+    "auth_router"
 ]

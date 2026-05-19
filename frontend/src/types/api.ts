@@ -2,6 +2,69 @@
  * API 相关类型定义
  */
 
+// ==================== Auth API 类型 ====================
+
+/** 登录请求 */
+export interface LoginRequest {
+  username: string; // 邮箱地址
+  password: string;
+}
+
+/** 注册请求 */
+export interface RegisterRequest {
+  email: string;
+  password: string;
+}
+
+/** Token 刷新请求 */
+export interface RefreshTokenRequest {
+  refresh_token: string;
+}
+
+/** 忘记密码请求 */
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+/** 重置密码请求 */
+export interface ResetPasswordRequest {
+  token: string;
+  password: string;
+}
+
+/** 认证 Token 响应 */
+export interface AuthTokens {
+  access_token: string;
+  refresh_token?: string;
+  token_type: string;
+}
+
+/** 用户信息 */
+export interface UserInfo {
+  id: string;
+  email: string;
+  is_active: boolean;
+  is_superuser: boolean;
+  is_verified: boolean;
+}
+
+/** 认证状态 */
+export interface AuthState {
+  user: UserInfo | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+}
+
+/** API 错误响应 */
+export interface ApiError {
+  detail: string;
+}
+
+// ==================== 通用 API 类型 ====================
+
 /** 通用 API 响应 */
 export interface ApiResponse<T = any> {
   success: boolean;

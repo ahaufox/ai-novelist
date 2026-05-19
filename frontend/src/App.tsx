@@ -11,6 +11,7 @@ import { initFileWatcher } from './utils/fileTreeHelper';
 import { initTabStateHandler } from './utils/tabStateHandler';
 import { initFileSyncHandler } from './utils/fileSyncHandler';
 import type { EditorSliceRootState } from './types/store';
+import { checkAuthStatusAsync } from './store/auth';
 
 function App() {
   const dispatch = useDispatch();
@@ -30,6 +31,9 @@ function App() {
     wsClient.connect().catch((error: Error) => {
       console.error('[App] WebSocket 连接失败:', error);
     });
+
+    // 启动时检查登录状态（后端 data/auth/tokens.json）
+    dispatch(checkAuthStatusAsync() as any);
 
     return () => {
       cleanupFileWatcher();

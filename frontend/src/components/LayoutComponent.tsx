@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { PanelGroup, Panel, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
 import { useDispatch, useSelector } from 'react-redux';
 import { addTab, setActiveTab } from '../store/editor';
@@ -13,10 +13,15 @@ import TopActionBar from './others/TopActionBar';
 import SearchPanel from './search/SearchPanel';
 import CheckpointPanel from './checkpoint/CheckpointPanel';
 import httpClient from '../utils/httpClient';
+import LoginPanel from './auth/LoginPanel';
+import UserPanel from './auth/UserPanel';
+import ForgotPasswordPanel from './auth/ForgotPasswordPanel';
+import { ThemeSettingsPanel } from './theme';
 
 function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutComponentProps) {
   const dispatch = useDispatch();
   const isTerminalVisible = useSelector((state: RootState) => state.terminalSlice.isVisible);
+  const { isAuthenticated } = useSelector((state: RootState) => state.authSlice);
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
   const [leftPanelContent, setLeftPanelContent] = useState<'chapter' | 'search' | 'checkpoint'>('chapter');
@@ -72,6 +77,21 @@ function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutCompone
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [dispatch]);
 
+  // 认证弹窗状态：'login' | 'user' | 'forgot' | null
+  const [authModal, setAuthModal] = useState<'login' | 'user' | 'forgot' | null>(null);
+
+  // 处理用户图标点击：已登录显示用户面板，未登录显示登录弹窗
+  const handleUserClick = useCallback(() => {
+    if (isAuthenticated) {
+      setAuthModal('user');
+    } else {
+      setAuthModal('login');
+    }
+  }, [isAuthenticated]);
+
+  // 主题设置弹窗状态
+  const [showThemeSettings, setShowThemeSettings] = useState(false);
+
   // 处理搜索结果中的文件选择
   const handleFileSelect = async (filePath: string) => {
     try {
@@ -100,6 +120,8 @@ function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutCompone
             <SidebarComponent
               activePanel={activePanel}
               setActivePanel={setActivePanel}
+              onUserClick={handleUserClick}
+              onSettingsClick={() => setShowThemeSettings(true)}
             />
           </div>
           
@@ -159,6 +181,32 @@ function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutCompone
             {activePanel === 'mcp' && (
               <MCPSettingsPanel />
             )}
+          </div>
+        )}
+
+        {/* 认证弹窗组 */}
+        {authModal === 'login' && (
+          <LoginPanel
+            onClose={() => setAuthModal(null)}
+            onForgotPassword={() => setAuthModal('forgot')}
+          />
+        )}
+        {authModal === 'user' && (
+          <UserPanel onClose={() => setAuthModal(null)} />
+        )}
+        {authModal === 'forgot' && (
+          <ForgotPasswordPanel
+            onClose={() => setAuthModal(null)}
+            onBackToLogin={() => setAuthModal('login')}
+          />
+        )}
+
+        {/* 主题设置弹窗 */}
+        {showThemeSettings && (
+          <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center">
+            <div className="w-[90%] max-w-md h-[80%] bg-theme-black rounded-lg shadow-2xl overflow-hidden">
+              <ThemeSettingsPanel onClose={() => setShowThemeSettings(false)} />
+            </div>
           </div>
         )}
       </div>

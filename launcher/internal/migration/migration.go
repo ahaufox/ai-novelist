@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -91,6 +92,7 @@ func MigrateDotfiles(projectPath, dataDir string) error {
 		return fmt.Errorf("解析 dotfiles 迁移脚本失败: %w", err)
 	}
 
+	// data/ 目录下的 dotfiles
 	mapping := map[string]string{
 		"aiignore":   ".aiignore",
 		"gitignore":  ".gitignore",
@@ -109,6 +111,68 @@ func MigrateDotfiles(projectPath, dataDir string) error {
 			}
 		}
 	}
+
+	// 项目根目录下的 .env 文件
+	// 如果文件不存在则创建，如果存在则补充缺失的键
+	if envContent, ok := defaults["env"]; ok {
+		envPath := filepath.Join(projectPath, ".env")
+
+		// 读取已有的 .env 文件中已有的键
+		existingLines := make(map[string]bool)
+		if existingData, err := os.ReadFile(envPath); err == nil {
+			for _, line := range strings.Split(string(existingData), "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+					parts := strings.SplitN(trimmed, "=", 2)
+					if len(parts) > 0 {
+						existingLines[parts[0]] = true
+					}
+				}
+			}
+		}
+
+		// 检查默认 .env 中是否有缺失的键
+		missingVars := []string{}
+		for _, line := range strings.Split(envContent, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				continue
+			}
+			parts := strings.SplitN(trimmed, "=", 2)
+			if len(parts) > 0 && !existingLines[parts[0]] {
+				missingVars = append(missingVars, line)
+			}
+		}
+
+		// 有缺失的键才需要写入
+		if len(missingVars) > 0 {
+			// 文件存在则追加，不存在则创建
+			flag := os.O_APPEND | os.O_CREATE | os.O_WRONLY
+			f, err := os.OpenFile(envPath, flag, 0644)
+			if err != nil {
+				return fmt.Errorf("打开 .env 失败: %w", err)
+			}
+			defer f.Close()
+
+			// 如果文件已有内容且不为空行结尾，先加个换行
+			if stat, _ := f.Stat(); stat.Size() > 0 {
+				// 检查是否以换行结尾
+				buf := make([]byte, 1)
+				if _, err := f.ReadAt(buf, stat.Size()-1); err == nil && buf[0] != '\n' {
+					if _, err := f.WriteString("\n"); err != nil {
+						return fmt.Errorf("写入 .env 换行失败: %w", err)
+					}
+				}
+			}
+
+			for _, line := range missingVars {
+				if _, err := fmt.Fprintln(f, line); err != nil {
+					return fmt.Errorf("写入 .env 失败: %w", err)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
