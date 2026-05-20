@@ -125,7 +125,8 @@ async def get_auth_status():
             "isAuthenticated": False, "user": None,
         })
 
-    async with httpx.AsyncClient(timeout=10) as client:
+    async with httpx.AsyncClient(timeout=15) as client:
+        # 1) 先尝试用 access_token 直接获取用户信息
         try:
             resp = await client.get(
                 f"{AUTH_BASE_URL}/auth/me",
@@ -136,33 +137,37 @@ async def get_auth_status():
                     "isAuthenticated": True, "user": resp.json(),
                 })
         except httpx.RequestError:
-            return JSONResponse(status_code=200, content={
-                "isAuthenticated": False, "user": None,
-            })
-
-    # access_token 失效，尝试刷新
-    refresh_token = settings.get_refresh_token()
-    if refresh_token:
-        try:
-            r = await client.post(
-                f"{AUTH_BASE_URL}/auth/refresh",
-                headers={"Authorization": f"Bearer {refresh_token}"},
-            )
-            if r.status_code == 200:
-                new_access = r.json().get("access_token")
-                if new_access:
-                    settings.save_tokens(new_access, refresh_token)
-                    me = await client.get(
-                        f"{AUTH_BASE_URL}/auth/me",
-                        headers={"Authorization": f"Bearer {new_access}"},
-                    )
-                    return JSONResponse(status_code=200, content={
-                        "isAuthenticated": True,
-                        "user": me.json() if me.status_code == 200 else None,
-                    })
-        except Exception:
+            # 网络错误不立即放弃，继续尝试 refresh 挽救
             pass
 
+        # 2) access_token 无效（非 200 或网络错误），尝试用 refresh_token 刷新
+        refresh_token = settings.get_refresh_token()
+        if refresh_token:
+            try:
+                r = await client.post(
+                    f"{AUTH_BASE_URL}/auth/refresh",
+                    headers={"Authorization": f"Bearer {refresh_token}"},
+                )
+                if r.status_code == 200:
+                    body = r.json()
+                    new_access = body.get("access_token")
+                    # 外部服务可能同时下发新的 refresh_token
+                    new_refresh = body.get("refresh_token", refresh_token)
+                    if new_access:
+                        settings.save_tokens(new_access, new_refresh)
+                        # 用新 access_token 获取用户信息
+                        me = await client.get(
+                            f"{AUTH_BASE_URL}/auth/me",
+                            headers={"Authorization": f"Bearer {new_access}"},
+                        )
+                        return JSONResponse(status_code=200, content={
+                            "isAuthenticated": True,
+                            "user": me.json() if me.status_code == 200 else None,
+                        })
+            except Exception:
+                pass
+
+    # 3) 全部尝试失败 → 清除 token
     settings.clear_tokens()
     return JSONResponse(status_code=200, content={
         "isAuthenticated": False, "user": None,
