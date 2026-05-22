@@ -1,15 +1,17 @@
 import { useRef, useState, useEffect } from 'react';
+import { readBinaryFrames } from '../../utils/binaryFrameReader';
 import { useDispatch, useSelector } from 'react-redux';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faAngleRight, faAngleUp, faTrash, faRotateRight, faEdit, faCopy, faCheck, faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import type { RootState } from '../../types';
 import type { Message, StreamChunk, ToolCall, BranchPoint } from '../../types/langgraph';
 import { setAvailableTools } from '../../store/mode';
-import { createAiMessage, updateAiMessage, updateMessages, setIsStreaming, setMessagesTree, setCurrentToolRequest } from '../../store/chat';
+import { createAiMessage, updateAiMessage, updateMessages, setIsStreaming, setMessagesTree } from '../../store/chat';
 import httpClient from '../../utils/httpClient';
 import UnifiedModal from '../others/UnifiedModal';
 import { tryCompleteJSON } from '../../utils/jsonUtils';
 import { useFileToolHandler } from '../../utils/fileToolHandler';
+import MarkdownRenderer from './MarkdownRenderer';
 
 const MessageDisplayPanel = () => {
   const dispatch = useDispatch();
@@ -138,30 +140,9 @@ const MessageDisplayPanel = () => {
   // 生成唯一消息ID
   const generateMessageId = () => `lc_run--${crypto.randomUUID()}`;
 
-  // 处理流式响应尾部的 state_update
-  const processStateUpdateLine = (line: string): boolean => {
-    try {
-      const parsed = JSON.parse(line);
-      if (parsed.type === 'state_update') {
-        dispatch(setMessagesTree({
-          messages: parsed.messages,
-          active_leaf: parsed.active_leaf,
-          active_path: parsed.active_path,
-          branch_points: parsed.branch_points,
-          tool_requests: parsed.tool_requests,
-        }));
-        return true;
-      }
-    } catch {
-      // 非 JSON 或解析失败，忽略
-    }
-    return false;
-  };
-
   // 重新生成消息（调用 /api/chat2/regenerate）
   const regenerateMessage = async (msgId: string) => {
     try {
-      dispatch(setCurrentToolRequest(null));
       dispatch(setIsStreaming(true));
 
       // 立即截断当前节点之后的旧消息，避免旧内容残留
@@ -180,123 +161,107 @@ const MessageDisplayPanel = () => {
       const reader = response.body?.getReader();
       if (!reader) throw new Error('无法获取响应流');
 
-      const decoder = new TextDecoder();
       let currentAiMessageId: string | null = null;
       let newAiResponse = "";
       let newReasoningContent = "";
       const toolCallChunksMap = new Map<number, { name?: string; args: string; id?: string }>();
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      let streamingEnded = false;
+      await readBinaryFrames(reader, (parsedChunk) => {
+        if (streamingEnded) return;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+        if (parsedChunk.interrupted) {
+          console.log("重新生成被中断");
+          dispatch(setIsStreaming(false));
+          streamingEnded = true;
+          return;
+        }
 
-        for (const line of lines) {
-          // 检查是否是 state_update
-          if (processStateUpdateLine(line)) {
-            dispatch(setIsStreaming(false));
-            break;
+        if (parsedChunk.type === 'state_update') {
+          dispatch(setMessagesTree({
+            messages: parsedChunk.messages,
+            active_leaf: parsedChunk.active_leaf,
+            active_path: parsedChunk.active_path,
+            branch_points: parsedChunk.branch_points,
+            next_pending_tool: parsedChunk.next_pending_tool,
+          }));
+          dispatch(setIsStreaming(false));
+          streamingEnded = true;
+          return;
+        }
+
+        if (!currentAiMessageId && (parsedChunk.content || parsedChunk.tool_calls?.length)) {
+          const aiMessageId = generateMessageId();
+          currentAiMessageId = aiMessageId;
+          dispatch(createAiMessage({ id: aiMessageId }));
+        }
+
+        if (parsedChunk.content) newAiResponse += parsedChunk.content;
+        if (parsedChunk.reasoning_content) newReasoningContent += parsedChunk.reasoning_content;
+
+        if (currentAiMessageId && (parsedChunk.content || parsedChunk.reasoning_content)) {
+          const updateData: any = { id: currentAiMessageId, content: newAiResponse };
+          if (newReasoningContent) updateData.reasoning_content = newReasoningContent;
+          dispatch(updateAiMessage(updateData));
+        }
+
+        // 上下文用量（流结束时后端通过 usage chunk 返回）
+        if (parsedChunk.usage_metadata && currentAiMessageId) {
+          dispatch(updateAiMessage({
+            id: currentAiMessageId,
+            content: newAiResponse,
+            usage_metadata: parsedChunk.usage_metadata
+          }));
+        }
+
+        // 流式 tool_calls（后端已合并，直接替换）
+        if (parsedChunk.tool_calls && parsedChunk.tool_calls.length > 0) {
+          for (const tc of parsedChunk.tool_calls) {
+            const index = tc.index ?? 0;
+            toolCallChunksMap.set(index, {
+              id: tc.id || toolCallChunksMap.get(index)?.id || '',
+              name: tc.function?.name || toolCallChunksMap.get(index)?.name || '',
+              args: tc.function?.arguments || ''
+            });
           }
 
-          try {
-            const parsedChunk = JSON.parse(line);
-
-            if (parsedChunk.interrupted) {
-              console.log("重新生成被中断");
-              dispatch(setIsStreaming(false));
-              break;
-            }
-
-            if (parsedChunk.type === 'state_update') {
-              dispatch(setMessagesTree({
-                messages: parsedChunk.messages,
-                active_leaf: parsedChunk.active_leaf,
-                active_path: parsedChunk.active_path,
-                branch_points: parsedChunk.branch_points,
-                tool_requests: parsedChunk.tool_requests,
-              }));
-              dispatch(setIsStreaming(false));
-              break;
-            }
-
-            if (!currentAiMessageId && (parsedChunk.content || parsedChunk.tool_calls?.length)) {
-              const aiMessageId = generateMessageId();
-              currentAiMessageId = aiMessageId;
-              dispatch(createAiMessage({ id: aiMessageId }));
-            }
-
-            if (parsedChunk.content) newAiResponse += parsedChunk.content;
-            if (parsedChunk.reasoning_content) newReasoningContent += parsedChunk.reasoning_content;
-
-            if (currentAiMessageId && (parsedChunk.content || parsedChunk.reasoning_content)) {
-              const updateData: any = { id: currentAiMessageId, content: newAiResponse };
-              if (newReasoningContent) updateData.reasoning_content = newReasoningContent;
-              dispatch(updateAiMessage(updateData));
-            }
-
-            // 上下文用量（流结束时后端通过 usage chunk 返回）
-            if (parsedChunk.usage_metadata && currentAiMessageId) {
-              dispatch(updateAiMessage({
-                id: currentAiMessageId,
-                content: newAiResponse,
-                usage_metadata: parsedChunk.usage_metadata
-              }));
-            }
-
-            // 流式 tool_calls（后端已合并，直接替换）
-            if (parsedChunk.tool_calls && parsedChunk.tool_calls.length > 0) {
-              for (const tc of parsedChunk.tool_calls) {
-                const index = tc.index ?? 0;
-                toolCallChunksMap.set(index, {
-                  id: tc.id || toolCallChunksMap.get(index)?.id || '',
-                  name: tc.function?.name || toolCallChunksMap.get(index)?.name || '',
-                  args: tc.function?.arguments || ''
-                });
-              }
-
-              const toolCalls: ToolCall[] = [];
-              for (const [, existing] of toolCallChunksMap.entries()) {
-                try {
-                  JSON.parse(existing.args);
-                  toolCalls.push({
-                    id: existing.id || 'unknown',
-                    type: 'function',
-                    function: {
-                      name: existing.name || 'unknown',
-                      arguments: existing.args
-                    }
-                  });
-                } catch (e) {
-                  const completedArgs = tryCompleteJSON(existing.args);
-                  toolCalls.push({
-                    id: existing.id || 'unknown',
-                    type: 'function',
-                    function: {
-                      name: existing.name || 'unknown',
-                      arguments: completedArgs
-                    }
-                  });
+          const toolCalls: ToolCall[] = [];
+          for (const [, existing] of toolCallChunksMap.entries()) {
+            try {
+              JSON.parse(existing.args);
+              toolCalls.push({
+                id: existing.id || 'unknown',
+                type: 'function',
+                function: {
+                  name: existing.name || 'unknown',
+                  arguments: existing.args
                 }
-              }
-
-              if (currentAiMessageId && toolCalls.length > 0) {
-                dispatch(updateAiMessage({ id: currentAiMessageId, content: newAiResponse, tool_calls: toolCalls }));
-              }
-
-              const completeToolCalls = toolCalls.filter(tc => {
-                try { JSON.parse(tc.function.arguments); return true; } catch { return false; }
               });
-              if (completeToolCalls.length > 0) {
-                processFileToolCalls(completeToolCalls);
-              }
+            } catch (e) {
+              const completedArgs = tryCompleteJSON(existing.args);
+              toolCalls.push({
+                id: existing.id || 'unknown',
+                type: 'function',
+                function: {
+                  name: existing.name || 'unknown',
+                  arguments: completedArgs
+                }
+              });
             }
-          } catch (e) {
-            console.log('无法解析chunk:', line);
+          }
+
+          if (currentAiMessageId && toolCalls.length > 0) {
+            dispatch(updateAiMessage({ id: currentAiMessageId, content: newAiResponse, tool_calls: toolCalls }));
+          }
+
+          const completeToolCalls = toolCalls.filter(tc => {
+            try { JSON.parse(tc.function.arguments); return true; } catch { return false; }
+          });
+          if (completeToolCalls.length > 0) {
+            processFileToolCalls(completeToolCalls);
           }
         }
-      }
+      });
     } catch (error) {
       console.error('重新生成消息失败:', error);
       setModal({ show: true, message: (error as Error).toString(), onConfirm: null, onCancel: null });
@@ -317,7 +282,6 @@ const MessageDisplayPanel = () => {
     try {
       setEditingMessageId(null);
       setEditingContent('');
-      dispatch(setCurrentToolRequest(null));
       dispatch(setIsStreaming(true));
 
       // 在前端立即替换目标消息内容，避免用户看到旧内容
@@ -339,114 +303,98 @@ const MessageDisplayPanel = () => {
       const reader = response.body?.getReader();
       if (!reader) throw new Error('无法获取响应流');
 
-      const decoder = new TextDecoder();
       let currentAiMessageId: string | null = null;
       let newAiResponse = "";
       let newReasoningContent = "";
       const toolCallChunksMap = new Map<number, { name?: string; args: string; id?: string }>();
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      let streamingEnded = false;
+      await readBinaryFrames(reader, (parsedChunk) => {
+        if (streamingEnded) return;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+        if (parsedChunk.interrupted) {
+          console.log("编辑后重新生成被中断");
+          dispatch(setIsStreaming(false));
+          streamingEnded = true;
+          return;
+        }
 
-        for (const line of lines) {
-          // 检查是否是 state_update
-          if (processStateUpdateLine(line)) {
-            dispatch(setIsStreaming(false));
-            break;
+        if (parsedChunk.type === 'state_update') {
+          dispatch(setMessagesTree({
+            messages: parsedChunk.messages,
+            active_leaf: parsedChunk.active_leaf,
+            active_path: parsedChunk.active_path,
+            branch_points: parsedChunk.branch_points,
+            next_pending_tool: parsedChunk.next_pending_tool,
+          }));
+          dispatch(setIsStreaming(false));
+          streamingEnded = true;
+          return;
+        }
+
+        if (!currentAiMessageId && (parsedChunk.content || parsedChunk.tool_calls?.length)) {
+          const aiMessageId = generateMessageId();
+          currentAiMessageId = aiMessageId;
+          dispatch(createAiMessage({ id: aiMessageId }));
+        }
+
+        if (parsedChunk.content) newAiResponse += parsedChunk.content;
+        if (parsedChunk.reasoning_content) newReasoningContent += parsedChunk.reasoning_content;
+
+        if (currentAiMessageId && (parsedChunk.content || parsedChunk.reasoning_content)) {
+          const updateData: any = { id: currentAiMessageId, content: newAiResponse };
+          if (newReasoningContent) updateData.reasoning_content = newReasoningContent;
+          dispatch(updateAiMessage(updateData));
+        }
+
+        // 流式 tool_calls
+        if (parsedChunk.tool_calls && parsedChunk.tool_calls.length > 0) {
+          for (const tc of parsedChunk.tool_calls) {
+            const index = tc.index ?? 0;
+            toolCallChunksMap.set(index, {
+              id: tc.id || toolCallChunksMap.get(index)?.id || '',
+              name: tc.function?.name || toolCallChunksMap.get(index)?.name || '',
+              args: tc.function?.arguments || ''
+            });
           }
 
-          try {
-            const parsedChunk = JSON.parse(line);
-
-            if (parsedChunk.interrupted) {
-              console.log("编辑后重新生成被中断");
-              dispatch(setIsStreaming(false));
-              break;
-            }
-
-            if (parsedChunk.type === 'state_update') {
-              dispatch(setMessagesTree({
-                messages: parsedChunk.messages,
-                active_leaf: parsedChunk.active_leaf,
-                active_path: parsedChunk.active_path,
-                branch_points: parsedChunk.branch_points,
-                tool_requests: parsedChunk.tool_requests,
-              }));
-              dispatch(setIsStreaming(false));
-              break;
-            }
-
-            if (!currentAiMessageId && (parsedChunk.content || parsedChunk.tool_calls?.length)) {
-              const aiMessageId = generateMessageId();
-              currentAiMessageId = aiMessageId;
-              dispatch(createAiMessage({ id: aiMessageId }));
-            }
-
-            if (parsedChunk.content) newAiResponse += parsedChunk.content;
-            if (parsedChunk.reasoning_content) newReasoningContent += parsedChunk.reasoning_content;
-
-            if (currentAiMessageId && (parsedChunk.content || parsedChunk.reasoning_content)) {
-              const updateData: any = { id: currentAiMessageId, content: newAiResponse };
-              if (newReasoningContent) updateData.reasoning_content = newReasoningContent;
-              dispatch(updateAiMessage(updateData));
-            }
-
-            // 流式 tool_calls
-            if (parsedChunk.tool_calls && parsedChunk.tool_calls.length > 0) {
-              for (const tc of parsedChunk.tool_calls) {
-                const index = tc.index ?? 0;
-                toolCallChunksMap.set(index, {
-                  id: tc.id || toolCallChunksMap.get(index)?.id || '',
-                  name: tc.function?.name || toolCallChunksMap.get(index)?.name || '',
-                  args: tc.function?.arguments || ''
-                });
-              }
-
-              const toolCalls: ToolCall[] = [];
-              for (const [, existing] of toolCallChunksMap.entries()) {
-                try {
-                  JSON.parse(existing.args);
-                  toolCalls.push({
-                    id: existing.id || 'unknown',
-                    type: 'function',
-                    function: {
-                      name: existing.name || 'unknown',
-                      arguments: existing.args
-                    }
-                  });
-                } catch (e) {
-                  const completedArgs = tryCompleteJSON(existing.args);
-                  toolCalls.push({
-                    id: existing.id || 'unknown',
-                    type: 'function',
-                    function: {
-                      name: existing.name || 'unknown',
-                      arguments: completedArgs
-                    }
-                  });
+          const toolCalls: ToolCall[] = [];
+          for (const [, existing] of toolCallChunksMap.entries()) {
+            try {
+              JSON.parse(existing.args);
+              toolCalls.push({
+                id: existing.id || 'unknown',
+                type: 'function',
+                function: {
+                  name: existing.name || 'unknown',
+                  arguments: existing.args
                 }
-              }
-
-              if (currentAiMessageId && toolCalls.length > 0) {
-                dispatch(updateAiMessage({ id: currentAiMessageId, content: newAiResponse, tool_calls: toolCalls }));
-              }
-
-              const completeToolCalls = toolCalls.filter(tc => {
-                try { JSON.parse(tc.function.arguments); return true; } catch { return false; }
               });
-              if (completeToolCalls.length > 0) {
-                processFileToolCalls(completeToolCalls);
-              }
+            } catch (e) {
+              const completedArgs = tryCompleteJSON(existing.args);
+              toolCalls.push({
+                id: existing.id || 'unknown',
+                type: 'function',
+                function: {
+                  name: existing.name || 'unknown',
+                  arguments: completedArgs
+                }
+              });
             }
-          } catch (e) {
-            console.log('无法解析chunk:', line);
+          }
+
+          if (currentAiMessageId && toolCalls.length > 0) {
+            dispatch(updateAiMessage({ id: currentAiMessageId, content: newAiResponse, tool_calls: toolCalls }));
+          }
+
+          const completeToolCalls = toolCalls.filter(tc => {
+            try { JSON.parse(tc.function.arguments); return true; } catch { return false; }
+          });
+          if (completeToolCalls.length > 0) {
+            processFileToolCalls(completeToolCalls);
           }
         }
-      }
+      });
     } catch (error) {
       console.error('编辑消息失败:', error);
       setModal({ show: true, message: (error as Error).toString(), onConfirm: null, onCancel: null });
@@ -484,23 +432,11 @@ const MessageDisplayPanel = () => {
     return firstLine || '...';
   };
 
-  // 渲染用户消息内容，高亮@文件路径
-  const renderUserMessageContent = (content: string) => {
-    if (!content) return null;
-    
-    // 匹配 @文件路径 的模式
-    const parts = content.split(/(@[^\s\n]+)/g);
-    
-    return parts.map((part, index) => {
-      if (part.startsWith('@') && part.length > 1) {
-        return (
-          <span key={index} className="text-theme-gray3">
-            {part}
-          </span>
-        );
-      }
-      return <span key={index}>{part}</span>;
-    });
+  // 预处理用户消息内容：将 @文件路径 替换为带样式的 HTML span
+  const preprocessUserContent = (content: string): string => {
+    if (!content) return '';
+    // 匹配 @文件路径 的模式，替换为带 class 的 span
+    return content.replace(/(@[^\s\n]+)/g, '<span class="file-path-mention">$1</span>');
   };
 
   // 获取消息所在分支点信息
@@ -540,7 +476,7 @@ const MessageDisplayPanel = () => {
           </div>
           <div className="leading-[1.4] overflow-wrap break-word break-words text-theme-white mt-1">
             {isExpanded ? (
-              <div className="whitespace-pre-wrap">{msg.content}</div>
+              <MarkdownRenderer content={msg.content || ''} />
             ) : (
               <div className="text-sm">{previewContent}</div>
             )}
@@ -602,7 +538,7 @@ const MessageDisplayPanel = () => {
             ) : (
               <div>
                 {isUser ? (
-                  <div className="whitespace-pre-wrap">{renderUserMessageContent(msg.content || '')}</div>
+                  <MarkdownRenderer content={preprocessUserContent(msg.content || '')} />
                 ) : (
                   <div>
                     {msg.role === 'assistant' && Boolean(msg.additional_kwargs?.reasoning_content) && (
@@ -622,7 +558,7 @@ const MessageDisplayPanel = () => {
                         )}
                       </div>
                     )}
-                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                    <MarkdownRenderer content={msg.content || ''} />
                     {msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0 && (
                       <div className="mt-2 p-2 bg-black/20 rounded-small">
                         {msg.tool_calls!.map((toolCall, toolIndex) => {

@@ -46,8 +46,6 @@ async def _push_file_content(file_path: str) -> None:
         # 用相对路径读取文件内容（read_file 会基于 DATA_DIR 解析）
         content = await read_file(relative_path)
         
-        logger.info(f"[DEBUG] 推送文件内容: path={relative_path}, content长度={len(content)}")
-        
         # 推送文件内容
         await ws_manager.send({
             "type": "file_content_sync",
@@ -70,8 +68,6 @@ def _on_file_change(event_dict: dict) -> None:
     
     event_type = event_dict.get("payload", {}).get("event")
     file_path = event_dict.get("payload", {}).get("path")
-    
-    logger.info(f"文件变化: {event_dict}")
 
     if _main_loop is None:
         logger.warning("主事件循环未设置，无法推送")

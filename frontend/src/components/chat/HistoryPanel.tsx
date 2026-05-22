@@ -52,14 +52,13 @@ const HistoryPanel = () => {
 
       // 从 history API 加载完整树信息
       const result = await httpClient.get(`/api/history/messages/${threadId}`);
-      // result = { messages, active_leaf, active_path, branch_points, tool_requests }
       if (result?.messages) {
         dispatch(setMessagesTree({
           messages: result.messages,
           active_leaf: result.active_leaf,
           active_path: result.active_path,
           branch_points: result.branch_points,
-          tool_requests: result.tool_requests,
+          next_pending_tool: result.next_pending_tool,
           thread_id: threadId,
         }));
       }

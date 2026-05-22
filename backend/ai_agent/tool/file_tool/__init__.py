@@ -1,15 +1,11 @@
-from backend.ai_agent.tool.file_tool.load_unload_file import load_unload_file
-from backend.ai_agent.tool.file_tool.manage_file import manage_file
-from backend.ai_agent.tool.file_tool.insert_line import insert_line
-from backend.ai_agent.tool.file_tool.delete_line import delete_line
-from backend.ai_agent.tool.file_tool.replace_line import replace_line
-from backend.ai_agent.tool.file_tool.search_text import search_text
+# 新工具（对标 opencode-dev）
+# 旧工具（replace_line, insert_line, delete_line, manage_file, search_text, load_unload_file）已废弃
+# 参见重构计划: plans/tool-interface-refactor-opencode-compatible.md
 
-__all__ = [
-    "load_unload_file",
-    "manage_file",
-    "insert_line",
-    "delete_line",
-    "replace_line",
-    "search_text",
-]
+from backend.ai_agent.tool.file_tool.read import ReadTool
+from backend.ai_agent.tool.file_tool.write import WriteTool
+from backend.ai_agent.tool.file_tool.edit import EditTool
+from backend.ai_agent.tool.file_tool.grep import GrepTool
+from backend.ai_agent.tool.file_tool.glob import GlobTool
+
+__all__ = ["ReadTool", "WriteTool", "EditTool", "GrepTool", "GlobTool"]

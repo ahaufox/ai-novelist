@@ -1,5 +1,4 @@
 from backend.settings.settings import settings
-from struct import pack
 from backend.ai_agent.core.tool_load import import_tools
 from backend.ai_agent.core.system_prompt_builder import SystemPromptBuilder
 from backend.ai_agent.models.stream_interrupt_manager import stream_interrupt_manager
@@ -169,18 +168,12 @@ class FunctionCallingRequest(BaseModel):
     )
 
 
-def _encode_message(data: dict) -> bytes:
-    """将 JSON 消息编码为二进制长度前缀帧: [4字节大端uint32长度][JSON UTF-8]"""
-    json_bytes = json.dumps(data, ensure_ascii=False).encode('utf-8')
-    return pack('>I', len(json_bytes)) + json_bytes
-
-
-def _build_state_update_data(thread_id: str) -> bytes:
-    """构建包含完整树信息的 state_update 二进制帧"""
+def _build_state_update_data(thread_id: str) -> str:
+    """构建包含完整树信息的 state_update JSON 字符串"""
     tree = storage.get_full_tree(thread_id)
     data = storage.get_data(thread_id)
     logger.info(f"下一步工具是{tree["next_pending_tool"]}")
-    return _encode_message({
+    return json.dumps({
         "type": "state_update",
         "messages": tree["messages"],
         "active_leaf": tree["active_leaf"],
@@ -188,7 +181,7 @@ def _build_state_update_data(thread_id: str) -> bytes:
         "branch_points": tree["branch_points"],
         "next_pending_tool": tree["next_pending_tool"],
         "summaries": data.get("summaries", []),
-    })
+    }, ensure_ascii=False) + "\n"
 
 
 def _get_pending_tool_calls(thread_id: str) -> list[dict]:
@@ -335,7 +328,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
 
     async for chunk in response_stream:
         if stream_interrupt_manager.is_interrupted(thread_id):
-            yield _encode_message({"interrupted": True})
+            yield json.dumps({"interrupted": True}, ensure_ascii=False) + "\n"
             break
 
         # 捕获 usage（DeepSeek 等提供商将 usage 放在最后一个有 choices 的 chunk 中，而非空 choices chunk）
@@ -346,7 +339,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
                 "total_tokens": chunk.usage.total_tokens,
             }
             logger.info(f"[usage] 捕获到 usage: {usage_metadata}")
-            yield _encode_message({"usage_metadata": usage_metadata})
+            yield json.dumps({"usage_metadata": usage_metadata}, ensure_ascii=False) + "\n"
 
         if not chunk.choices:
             continue
@@ -388,7 +381,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
             chunk_data["tool_calls"] = [tc for tc in tool_calls_accumulated.values()]
 
         if chunk_data:
-            yield _encode_message(chunk_data)
+            yield json.dumps(chunk_data, ensure_ascii=False) + "\n"
             await asyncio.sleep(0)
 
     # 保存 assistant 消息到 data
@@ -462,7 +455,7 @@ async def send_chat_message(request: ChatMessageRequest):
             stream_interrupt_manager.remove_task(thread_id)
             logger.info(f"清理流式传输任务: {thread_id},send_chat api已经正确执行")
 
-    return StreamingResponse(generate(), media_type="application/octet-stream")
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # ==================== 重新生成（创建分支） ====================
@@ -489,7 +482,7 @@ async def regenerate_message(request: RegenerateRequest):
             stream_interrupt_manager.remove_task(thread_id)
             logger.info(f"清理流式传输任务: {thread_id}")
 
-    return StreamingResponse(generate(), media_type="application/octet-stream")
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # ==================== 切换分支 ====================
@@ -606,6 +599,8 @@ async def function_calling(request: FunctionCallingRequest):
         tool_parts.append(result["detail"])
     if request.user_diff:
         tool_parts.append(f"[用户修改了文件内容]\n{request.user_diff}")
+    if request.user_extra:
+        tool_parts.append(f"[用户留言]\n{request.user_extra}")
     tool_content = "\n\n".join(tool_parts) if tool_parts else result_json
     tool_msg = {
         "id": f"msg-{uuid.uuid4()}",
@@ -619,41 +614,57 @@ async def function_calling(request: FunctionCallingRequest):
     data["active_leaf"] = tool_msg["id"]
     storage.save_data(thread_id, data)
 
+    # 3. 将 user_extra 提升到循环外处理（仅一次，避免多轮循环中重复插入）
+    if request.user_extra:
+        data = storage.get_data(thread_id)
+        user_extra_msg = {
+            "id": f"msg-{uuid.uuid4()}",
+            "role": "user",
+            "content": request.user_extra,
+            "parent_id": data.get("active_leaf"),
+            "created_at": time.time(),
+        }
+        data["messages"].append(user_extra_msg)
+        data["active_leaf"] = user_extra_msg["id"]
+        storage.save_data(thread_id, data)
+
     async def generate():
         try:
             stream_interrupt_manager.create_task(thread_id)
 
-            # 发送统一 state_update
-            yield _build_state_update_data(thread_id)
+            while True:
+                # 发送统一 state_update（包含 next_pending_tool）
+                yield _build_state_update_data(thread_id)
 
-            # 3. 检查是否还有待审批的工具（消息链推导）
-            pending = _get_pending_tool_calls(thread_id)
+                # 检查是否还有待审批的工具（消息链推导）
+                pending = _get_pending_tool_calls(thread_id)
+                if pending:
+                    # 有工具待审批 → 退出循环，让前端发起新的 function_calling 请求
+                    logger.info(f"仍有 {len(pending)} 个工具待审批，等待前端处理")
+                    break
 
-            if not pending:
-                # 所有工具执行完毕
-                latest_data = storage.get_data(thread_id)
-                if request.user_extra:
-                    user_extra_msg = {
-                        "id": f"msg-{uuid.uuid4()}",
-                        "role": "user",
-                        "content": request.user_extra,
-                        "parent_id": latest_data.get("active_leaf"),
-                        "created_at": time.time(),
-                    }
-                    latest_data["messages"].append(user_extra_msg)
-                    latest_data["active_leaf"] = user_extra_msg["id"]
-                    storage.save_data(thread_id, latest_data)
-
-                # 获取活跃路径作为 AI 上下文
+                # 所有工具执行完毕，流式生成 AI 响应
                 history = storage.get_active_path(thread_id)
-                ai_parent_id = latest_data.get("active_leaf")
+                ai_parent_id = storage.get_data(thread_id).get("active_leaf")
                 async for chunk in _stream_ai_response(thread_id, ai_parent_id, history):
                     yield chunk
+
+                # _stream_ai_response 内部已保存 assistant 消息并 yield 了 state_update
+                # 检查 AI 是否产生了新的 tool_calls
+                if not _get_pending_tool_calls(thread_id):
+                    # 没有新工具 → AI 本轮是纯文本回复，对话结束
+                    logger.info("AI 回复为纯文本，工具调用循环结束")
+                    break
+
+                # 有新的 tool_calls → 继续循环
+                # 下一次迭代会在顶部 yield state_update（前端看到 next_pending_tool）
+                # 然后 pending 不为空 → break，等待前端用户审批
+                logger.info("AI 产生了新的工具调用，进入下一轮循环")
         finally:
             stream_interrupt_manager.remove_task(thread_id)
             logger.info(f"function_call端点正确执行")
 
-    return StreamingResponse(generate(), media_type="application/octet-stream")
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # ==================== 上下文压缩 ====================

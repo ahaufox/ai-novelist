@@ -138,39 +138,34 @@ export interface ApiGitStatus {
   changes: ApiGitChange[];
 }
 
-// ==================== 文件工具类型 ====================
+// ==================== 文件工具类型（新：对标 opencode-dev）====================
 
-/** 插入行操作项 */
-export interface InsertLineItem {
-  paragraph: number;
+/** edit 工具参数 */
+export interface EditToolParams {
+  filePath: string;
+  oldString: string;
+  newString: string;
+  replaceAll?: boolean;
+}
+
+/** write 工具参数 */
+export interface WriteToolParams {
+  filePath: string;
   content: string;
 }
 
-/** 删除行操作项 */
-export interface DeleteLineItem {
-  id: string;  // 格式：段落号-哈希，如 "3-b2"
+/** shell 工具参数 */
+export interface ShellToolParams {
+  command: string;
+  description: string;
+  timeout?: number;
+  workdir?: string;
 }
 
-/** 替换行操作项 */
-export interface ReplaceLineItem {
-  id: string;  // 格式：段落号-哈希，如 "3-b2"
-  new_content: string;
-}
-
-/** 插入行工具参数 */
-export interface InsertLineParams {
-  path: string;
-  inserts: InsertLineItem[];
-}
-
-/** 删除行工具参数 */
-export interface DeleteLineParams {
-  path: string;
-  deletes: DeleteLineItem[];
-}
-
-/** 替换行工具参数 */
-export interface ReplaceLineParams {
-  path: string;
-  replaces: ReplaceLineItem[];
+/** question 工具参数 */
+export interface QuestionToolParams {
+  questions: Array<{
+    question: string;
+    options?: string[];
+  }>;
 }

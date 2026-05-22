@@ -196,9 +196,117 @@ func EnsureDataSubdirs(projectPath, dataDir string) error {
 	return nil
 }
 
+// 旧工具名 → 新工具名映射（空字符串表示直接删除，无对应新工具）
+var oldToolMapping = map[string]string{
+	"load_unload_file":  "",
+	"manage_file":       "",
+	"insert_line":       "",
+	"replace_line":      "",
+	"search_text":       "",
+	"ask_user_question": "question",
+	"load_unload_skill": "skill",
+	"execute_command":   "shell",
+	"delete_line":       "",
+}
+
+// MigrateToolNames 迁移 store.yaml 中所有 mode 配置的工具列表
+// 将旧工具名替换为新工具名，无对应新工具的旧工具名直接删除
+func MigrateToolNames(projectPath, configDir, filename string) error {
+	filePath := filepath.Join(projectPath, configDir, filename)
+
+	// 读取用户配置
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // 文件不存在，跳过
+		}
+		return fmt.Errorf("读取配置 %s 失败: %w", filename, err)
+	}
+
+	var config map[string]interface{}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("解析配置 %s 失败: %w", filename, err)
+	}
+
+	// 获取 mode 字段
+	modeRaw, ok := config["mode"]
+	if !ok {
+		return nil // 没有 mode 字段，跳过
+	}
+
+	modeMap, ok := modeRaw.(map[string]interface{})
+	if !ok {
+		return nil // mode 不是 map，跳过
+	}
+
+	changed := false
+
+	// 遍历每个 mode
+	for _, modeConfigRaw := range modeMap {
+		modeConfig, ok := modeConfigRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		toolsRaw, ok := modeConfig["tools"]
+		if !ok {
+			continue
+		}
+
+		toolsList, ok := toolsRaw.([]interface{})
+		if !ok {
+			continue
+		}
+
+		// 过滤并替换工具名
+		newTools := make([]interface{}, 0, len(toolsList))
+		for _, toolRaw := range toolsList {
+			toolName, ok := toolRaw.(string)
+			if !ok {
+				newTools = append(newTools, toolRaw)
+				continue
+			}
+
+			if newName, exists := oldToolMapping[toolName]; exists {
+				changed = true
+				if newName != "" {
+					// 有对应新工具名，替换
+					newTools = append(newTools, newName)
+				}
+				// 空字符串 = 直接删除，不追加
+			} else {
+				// 不在旧工具列表中，保留
+				newTools = append(newTools, toolRaw)
+			}
+		}
+
+		modeConfig["tools"] = newTools
+	}
+
+	if !changed {
+		return nil // 没有变化，跳过写入
+	}
+
+	// 写回
+	out, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("序列化配置 %s 失败: %w", filename, err)
+	}
+	if err := os.WriteFile(filePath, out, 0644); err != nil {
+		return fmt.Errorf("写入配置 %s 失败: %w", filename, err)
+	}
+
+	fmt.Printf("[迁移] 已清理 %s 中的旧工具名称\n", filename)
+	return nil
+}
+
 // RunAll 执行全部迁移
 func RunAll(projectPath string) error {
-	// store.yaml 迁移
+	// store.yaml 工具名称迁移（先执行，清理旧工具名）
+	if err := MigrateToolNames(projectPath, "data/config", "store.yaml"); err != nil {
+		return fmt.Errorf("store.yaml 工具名迁移失败: %w", err)
+	}
+	// store.yaml 字段补全
 	if err := MigrateYaml(projectPath, "data/config", "store.yaml", "store_migration.yaml"); err != nil {
 		return fmt.Errorf("store.yaml 迁移失败: %w", err)
 	}

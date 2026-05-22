@@ -356,10 +356,11 @@ def format_tree_for_prompt(result: FileTreeResult, data_dir: str = "") -> str:
     """
     lines = []
     
-    # 显示根目录名
+    # 显示根目录完整绝对路径
     if data_dir:
-        root_name = os.path.basename(data_dir) or "project"
-        lines.append(f"工作区根目录：{root_name}/")
+        # 统一路径分隔符为正斜杠，显示完整绝对路径
+        normalized_path = data_dir.replace("\\", "/")
+        lines.append(f"工作区根目录：{normalized_path}/")
     
     # 添加统计信息头，让AI了解显示范围
     total = result.total_items

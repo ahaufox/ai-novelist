@@ -11,7 +11,7 @@ import TwoStepRagPanel from './two-step-rag/TwoStepRagPanel';
 import ContextProgressBar from './ContextProgressBar';
 import MessageInputPanel from './MessageInputPanel';
 import MiddlePart from './MiddlePart';
-import { setState, setSelectedThreadId, setCurrentToolRequest, setMessage, setMessagesTree, createAiMessage, updateAiMessage, setIsStreaming } from '../../store/chat';
+import { clearChat, setSelectedThreadId, setMessagesTree, createAiMessage, updateAiMessage, setIsStreaming } from '../../store/chat';
 import type { RootState } from '../../types';
 import httpClient from '../../utils/httpClient';
 
@@ -22,12 +22,10 @@ const ChatPanel = () => {
   const latestSummary = summaries.length > 0 ? (summaries[summaries.length - 1]?.content ?? "") : "";
   const [isSummarizing, setIsSummarizing] = useState(false);
 
-  // 创建新会话
+  // 创建新会话（清除所有状态）
   const handleNewThread = () => {
-    dispatch(setState(null));
+    dispatch(clearChat());
     dispatch(setSelectedThreadId(null));
-    dispatch(setCurrentToolRequest(null));
-    dispatch(setMessage(''));
     console.log("回到初始状态");
   };
   // 压缩上下文
@@ -43,6 +41,7 @@ const ChatPanel = () => {
           active_leaf: resp.active_leaf,
           active_path: resp.active_path,
           branch_points: resp.branch_points,
+          next_pending_tool: resp.next_pending_tool,
           summaries: resp.summaries,
         }));
         // 显示临时提示消息

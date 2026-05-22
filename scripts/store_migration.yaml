@@ -29,15 +29,16 @@ mode:
     - .gitignore
     - .userignore
     tools:
-    - load_unload_file
-    - manage_file
-    - insert_line
-    - delete_line
-    - replace_line
-    - search_text
-    - ask_user_question
-    - load_unload_skill
-    - execute_command
+    - read
+    - write
+    - edit
+    - grep
+    - glob
+    - shell
+    - question
+    - skill
+    - rag_search
+    - rag_list_files
 autoApproveSettings: false
 selectedProvider: deepseek
 selectedModel: deepseek-chat

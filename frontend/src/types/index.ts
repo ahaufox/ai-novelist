@@ -38,8 +38,6 @@ export type {
   AppDispatch,
   // Store 内部类型
   EditorSliceRootState,
-  // Auth
-  AuthState,
 } from './store';
 
 // ==================== LangGraph 类型 ====================
@@ -91,22 +89,18 @@ export type {
   // Auth
   LoginRequest,
   RegisterRequest,
-  AuthTokens,
   UserInfo,
-  AuthState as ApiAuthState,
   ApiError,
   // Git Checkpoint
   ApiCheckpoint,
   ApiFileChange,
   ApiGitChange,
   ApiGitStatus,
-  // File Tools
-  InsertLineItem,
-  DeleteLineItem,
-  ReplaceLineItem,
-  InsertLineParams,
-  DeleteLineParams,
-  ReplaceLineParams,
+  // File Tools (新)
+  EditToolParams,
+  WriteToolParams,
+  ShellToolParams,
+  QuestionToolParams,
 } from './api';
 
 // ==================== 组件共享类型 ====================

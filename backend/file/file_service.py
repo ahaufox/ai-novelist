@@ -226,6 +226,18 @@ async def create_item(name: str, is_folder: bool = False, parent_path: str = "")
     return result
 
 
+def normalize_line_endings(content: str) -> str:
+    """统一换行符：将 \r\n 转换为 \n，避免 Windows 换行符导致的问题
+
+    当文件通过 text mode 写入时，Python 在 Windows 上会自动将 \n 翻译为 \r\n。
+    如果内容中已混入 \r\n，text mode 会将其中的 \n 再次翻译，导致磁盘上出现 \r\r\n，
+    后续读取时 universal newline 会将多余的 \r 解析为空行。
+
+    此函数确保写入前内容只包含 \n，让 text mode 做唯一的 \n→\r\n 翻译。
+    """
+    return content.replace('\r\n', '\n')
+
+
 async def read_file(file_path: str) -> str:
     """读取文件内容
     """
@@ -244,8 +256,8 @@ async def update_file(file_path: str, content: str):
     full_path = resolve_file_path(file_path)
     # 自动创建父文件夹（如果不存在）
     full_path.parent.mkdir(parents=True, exist_ok=True)
-    # 将 \r\n 转换为 \n，避免Windows换行符问题
-    content = content.replace('\r\n', '\n')
+    # 统一换行符，避免Windows text mode 双重翻译问题
+    content = normalize_line_endings(content)
     async with aiofiles.open(full_path, 'w', encoding='utf-8') as f:
         await f.write(content)
 

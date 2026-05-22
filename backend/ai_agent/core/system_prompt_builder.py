@@ -62,108 +62,6 @@ class SystemPromptBuilder:
         
         return unique_paths
     
-    def _sync_at_paths_to_additional_info(self, at_paths: List[str], mode: str) -> None:
-        """将 @路径 同步到当前模式的 additionalInfo 中
-        
-        如果路径已存在于 additionalInfo 中则跳过，否则添加进去。
-        同时会验证文件是否存在，不存在的文件会被忽略。
-        所有路径会转换为绝对路径存储。
-        
-        Args:
-            at_paths: 从用户输入中提取的 @路径 列表（支持相对和绝对路径）
-            mode: 当前模式名称
-        """
-        try:
-            if not at_paths or not mode:
-                return
-            
-            # 过滤出实际存在的文件路径，并转换为绝对路径
-            existing_abs_paths = []
-            missing_paths = []
-            for path in at_paths:
-                file_path = resolve_file_path(path)
-                if file_path.exists() and file_path.is_file():
-                    # 转换为绝对路径存储
-                    abs_path = normalize_to_absolute(path)
-                    existing_abs_paths.append(abs_path)
-                else:
-                    missing_paths.append(path)
-            
-            # 记录不存在的文件路径
-            if missing_paths:
-                logger.warning(f"以下 @路径 引用的文件不存在，已忽略: {missing_paths}")
-            
-            # 如果没有存在的文件，直接返回
-            if not existing_abs_paths:
-                logger.info(f"没有有效的 @路径 需要添加到 {mode} 模式")
-                return
-            
-            # 获取当前模式的 additionalInfo
-            additional_files = settings.get_config("mode", mode, "additionalInfo", default=[])
-            
-            if not isinstance(additional_files, list):
-                additional_files = []
-            
-            # 过滤出不在 additionalInfo 中的新路径
-            new_paths = [p for p in existing_abs_paths if p not in additional_files]
-            
-            if new_paths:
-                # 将新路径添加到 additionalInfo
-                updated_list = additional_files + new_paths
-                settings.update_config(updated_list, "mode", mode, "additionalInfo")
-                logger.info(f"已将 @路径 添加到 {mode} 模式的 additionalInfo: {new_paths}")
-            else:
-                logger.info(f"所有 @路径 已存在于 {mode} 模式的 additionalInfo 中")
-                
-        except Exception as e:
-            logger.error(f"同步 @路径 到 additionalInfo 失败: {e}")
-    
-    async def _get_loaded_files_content(self, mode: str) -> str:
-        """获取已加载文件的内容（用于末尾附加消息）
-        
-        Args:
-            mode: 模式名称
-            
-        Returns:
-            格式化的文件内容字符串（带段落编号）
-        """
-        try:
-            # 从配置中获取当前模式的 additionalInfo 文件列表
-            loaded_files = settings.get_config("mode", mode, "additionalInfo", default=[])
-            
-            # 如果没有加载的文件，返回空字符串
-            if not loaded_files or not isinstance(loaded_files, list):
-                return "[额外文件内容]:\n暂未加载文件"
-            
-            # 构建格式化的文件内容
-            file_contents = []
-            
-            for file_path in loaded_files:
-                if not isinstance(file_path, str):
-                    continue
-                
-                try:
-                    # 使用 file_service 的 read_file 读取文件内容
-                    content = await read_file(file_path)
-                    
-                    if content:
-                        # 使用 format_file_with_hashes 格式化内容
-                        formatted_content = format_file_with_hashes(content)
-                        
-                        file_contents.append(f"[额外文件 - {file_path}]:\n{formatted_content}")
-                    else:
-                        logger.warning(f"文件内容为空或文件不存在: {file_path}")
-                except Exception as e:
-                    logger.error(f"读取文件失败 {file_path}: {e}")
-            
-            if file_contents:
-                return f"[额外文件内容]:\n\n{'\n\n'.join(file_contents)}"
-            else:
-                return "[额外文件内容]:\n暂未加载文件"
-                
-        except Exception as e:
-            logger.error(f"获取 additionalInfo 文件内容失败: {e}")
-            return "[额外文件内容]:\n暂未加载文件"
     
     def _get_skills_info(self, mode: str) -> str:
         """获取指定模式的 Skills 简要信息（仅名称和描述）
@@ -481,18 +379,6 @@ class SystemPromptBuilder:
             tab_state_content = format_tab_state_for_prompt(tab_state)
             if tab_state_content:
                 context_parts.append(tab_state_content)
-            
-            # 处理 @路径 同步（如果用户输入中包含 @路径）
-            if user_input and mode:
-                at_paths = self._extract_at_paths(user_input)
-                if at_paths:
-                    self._sync_at_paths_to_additional_info(at_paths, mode)
-            
-            # 添加已加载文件内容
-            if include_loaded_files:
-                loaded_files_content = await self._get_loaded_files_content(mode or "")
-                if loaded_files_content:
-                    context_parts.append(loaded_files_content)
             
             # 添加已加载 Skill 内容
             loaded_skills_content = await self._get_loaded_skills_content(mode or "")

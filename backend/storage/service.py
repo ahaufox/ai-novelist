@@ -10,14 +10,14 @@ from backend.storage.models import Conversation
 logger = logging.getLogger(__name__)
 
 
-# ==================== Conversation CRUD（保持不变） ====================
+# ==================== Conversation CRUD ====================
 
 
 def create_conversation(thread_id: str, title: str = "新对话") -> Conversation:
-    """创建新会话，初始 data 为空消息列表和空工具请求字典"""
+    """创建新会话，初始 data 为空消息列表"""
     conn = get_connection()
     now = time.time()
-    data = json.dumps({"messages": [], "tool_requests": {}, "active_leaf": None}, ensure_ascii=False)
+    data = json.dumps({"messages": [], "active_leaf": None}, ensure_ascii=False)
     conn.execute(
         "INSERT OR IGNORE INTO conversations (thread_id, title, created_at, updated_at, data) VALUES (?, ?, ?, ?, ?)",
         (thread_id, title, now, now, data),
@@ -95,8 +95,8 @@ def get_data(thread_id: str) -> dict:
         (thread_id,),
     ).fetchone()
     if row is None:
-        return {"messages": [], "tool_requests": {}, "active_leaf": None}
-    return json.loads(row["data"]) if row["data"] else {"messages": [], "tool_requests": {}, "active_leaf": None}
+        return {"messages": [], "active_leaf": None}
+    return json.loads(row["data"]) if row["data"] else {"messages": [], "active_leaf": None}
 
 
 def save_data(thread_id: str, data: dict):
@@ -115,35 +115,6 @@ def append_message(thread_id: str, message: dict):
     data = get_data(thread_id)
     data.setdefault("messages", []).append(message)
     save_data(thread_id, data)
-
-
-# ==================== Tool Request 操作（保持不变） ====================
-
-
-def add_tool_request(thread_id: str, tool_call_id: str, tool_name: str, arguments: str):
-    data = get_data(thread_id)
-    data.setdefault("tool_requests", {})[tool_call_id] = {
-        "tool_name": tool_name,
-        "arguments": arguments,
-        "approved": None,
-        "user_extra": None,
-        "result": None,
-    }
-    save_data(thread_id, data)
-
-
-def update_tool_request(thread_id: str, tool_call_id: str, **updates):
-    data = get_data(thread_id)
-    trs = data.setdefault("tool_requests", {})
-    if tool_call_id in trs:
-        trs[tool_call_id].update(updates)
-        save_data(thread_id, data)
-
-
-def get_pending_tool_requests(thread_id: str) -> list[tuple[str, dict]]:
-    data = get_data(thread_id)
-    trs = data.get("tool_requests", {})
-    return [(tid, info) for tid, info in trs.items() if info.get("approved") is None]
 
 
 # ==================== 分支树核心算法 ====================
@@ -310,23 +281,12 @@ def switch_branch(thread_id: str, parent_msg_id: str, target_msg_id: str) -> dic
     return get_full_tree(thread_id)
 
 
-def _get_active_tool_call_ids(active_path: list[dict]) -> set[str]:
-    """收集活跃路径上所有 assistant 消息中 tool_calls 的 id"""
-    ids: set[str] = set()
-    for msg in active_path:
-        if msg.get("role") == "assistant" and msg.get("tool_calls"):
-            for tc in msg["tool_calls"]:
-                if tc.get("id"):
-                    ids.add(tc["id"])
-    return ids
-
-
 def get_full_tree(thread_id: str) -> dict:
     """
     返回完整树信息给前端。
-    { messages, active_leaf, branch_points, active_path, tool_requests }
+    { messages, active_leaf, branch_points, active_path, next_pending_tool }
     active_path 是后端计算好的当前活跃路径消息列表，前端直接用于渲染。
-    tool_requests 仅包含活跃路径上 assistant 消息的 tool_calls 对应的条目。
+    next_pending_tool 由后端计算，前端直接读取，不做任何推导。
     """
     data = get_data(thread_id)
     messages = data.get("messages", [])
@@ -334,17 +294,24 @@ def get_full_tree(thread_id: str) -> dict:
     active_path = _get_active_path(messages, active_leaf)
     branch_points = _compute_branch_points(messages, active_leaf)
 
-    # 只返回活跃路径关联的 tool_requests
-    all_tr = data.get("tool_requests", {})
-    active_ids = _get_active_tool_call_ids(active_path)
-    filtered_tr = {k: v for k, v in all_tr.items() if k in active_ids}
+    # 计算下一个待审批工具
+    from backend.api.chat_api2 import _get_pending_tool_calls
+    pending = _get_pending_tool_calls(thread_id)
+    next_pending_tool = None
+    if pending:
+        tc = pending[0]
+        next_pending_tool = {
+            "tool_call_id": tc.get("id"),
+            "tool_name": tc.get("function", {}).get("name", ""),
+            "arguments": tc.get("function", {}).get("arguments", "{}"),
+        }
 
     return {
         "messages": messages,
         "active_leaf": active_leaf,
         "active_path": active_path,
         "branch_points": branch_points,
-        "tool_requests": filtered_tr,
+        "next_pending_tool": next_pending_tool,
     }
 
 

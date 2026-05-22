@@ -7,7 +7,6 @@ import type {
   LangGraphState,
   Message,
   ToolCall,
-  ToolRequestData,
   UsageMetadata,
   BranchPoint,
   Summary,
@@ -21,19 +20,18 @@ const initialState: ChatState = {
   modeExpanded: false,
   autoApproveExpanded: false,
   autoApproveEnabled: false,
-  toolRequestVisible: false,
   twoStepRagConfig: { id: null, name: null },
   twoStepRagExpanded: false,
   historyExpanded: false,
   selectedThreadId: null,
   selectedModeId: null,
   isStreaming: false,
-  currentToolRequest: null,
   // 分支树状态（全部由后端计算，前端仅存储）
   allMessages: [],
   activeLeaf: null,
   branchPoints: [],
   summaries: [],
+  nextPendingTool: null,
 };
 
 export const chatSlice = createSlice({
@@ -186,13 +184,7 @@ export const chatSlice = createSlice({
       state.message = '';
       state.modeExpanded = false;
       state.autoApproveExpanded = false;
-      state.toolRequestVisible = false;
-      state.currentToolRequest = null;
-    },
-
-    // 设置工具请求栏显示状态
-    setToolRequestVisible: (state: Draft<ChatState>, action: PayloadAction<boolean>) => {
-      state.toolRequestVisible = action.payload;
+      state.nextPendingTool = null;
     },
 
     // 清除中断
@@ -237,11 +229,6 @@ export const chatSlice = createSlice({
       state.isStreaming = action.payload;
     },
 
-    // 设置当前待审批的工具请求
-    setCurrentToolRequest: (state: Draft<ChatState>, action: PayloadAction<ToolRequestData | null>) => {
-      state.currentToolRequest = action.payload;
-    },
-
     // 用后端返回的完整消息列表替换当前聊天消息
     updateMessages: (state: Draft<ChatState>, action: PayloadAction<Message[]>) => {
       if (!state.state) return;
@@ -262,9 +249,9 @@ export const chatSlice = createSlice({
       branch_points: BranchPoint[];
       summaries?: Summary[];
       thread_id?: string;
-      tool_requests?: Record<string, ToolRequestData>;
+      next_pending_tool?: { tool_call_id: string; tool_name: string; arguments: string } | null;
     }>) => {
-      const { messages, active_leaf, active_path, branch_points, summaries, thread_id, tool_requests } = action.payload;
+      const { messages, active_leaf, active_path, branch_points, summaries, thread_id, next_pending_tool } = action.payload;
       if (summaries !== undefined) {
         state.summaries = summaries;
       }
@@ -298,26 +285,8 @@ export const chatSlice = createSlice({
         };
       }
 
-      // 处理 tool_requests：如果有待审批的请求，设置 currentToolRequest
-      if (tool_requests !== undefined) {
-        const pendingEntry = Object.entries(tool_requests as Record<string, ToolRequestData>).find(([_, tr]) => tr.approved === null);
-        if (pendingEntry) {
-          const [tool_call_id, info] = pendingEntry;
-          state.currentToolRequest = {
-            tool_call_id,
-            tool_name: info.tool_name,
-            arguments: info.arguments || "{}",
-            notified: true,
-            approved: null,
-            user_extra: null,
-            result: null,
-          };
-          state.toolRequestVisible = true;
-        } else {
-          state.currentToolRequest = null;
-          state.toolRequestVisible = false;
-        }
-      }
+      // 直接存储后端计算的待审批工具，前端不做任何推导
+      state.nextPendingTool = next_pending_tool ?? null;
     },
   },
 });
@@ -333,7 +302,6 @@ export const {
   toggleAutoApproveExpanded,
   setAutoApproveEnabled,
   clearChat,
-  setToolRequestVisible,
   clearInterrupt,
   setTwoStepRagConfig,
   setTwoStepRagExpanded,
@@ -342,7 +310,6 @@ export const {
   setSelectedThreadId,
   setSelectedModeId,
   setIsStreaming,
-  setCurrentToolRequest,
   updateMessages,
   setMessagesTree,
 } = chatSlice.actions;

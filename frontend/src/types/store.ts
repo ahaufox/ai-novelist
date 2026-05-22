@@ -33,8 +33,6 @@ export interface ChatState {
   autoApproveExpanded: boolean;
   /** 自动批准启用状态 */
   autoApproveEnabled: boolean;
-  /** 工具请求栏显示状态 */
-  toolRequestVisible: boolean;
   /** 两步 RAG 配置 */
   twoStepRagConfig: TwoStepRagConfig;
   /** 两步 RAG 展开状态 */
@@ -47,8 +45,8 @@ export interface ChatState {
   selectedModeId: string | null;
   /** 是否正在流式传输 */
   isStreaming: boolean;
-  /** 当前待审批的工具请求 */
-  currentToolRequest: ToolRequestData | null;
+  /** 下一个待审批的工具请求（后端计算，前端只读，{ tool_call_id, tool_name, arguments } or null） */
+  nextPendingTool: { tool_call_id: string; tool_name: string; arguments: string } | null;
   /** 分支树：完整消息列表（含所有分支） */
   allMessages: Message[];
   /** 分支树：当前活跃叶子 id */

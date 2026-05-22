@@ -1,6 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPaperPlane, faStop } from '@fortawesome/free-solid-svg-icons';
 import { useDispatch, useSelector } from 'react-redux';
+import { BinaryFrameReader, readBinaryFrames } from '../../utils/binaryFrameReader';
 import { useState, useRef } from 'react';
 import type { RootState } from '../../types';
 import {
@@ -11,7 +12,6 @@ import {
   setMessage,
   setSelectedThreadId,
   setIsStreaming,
-  setCurrentToolRequest,
   setMessagesTree,
 } from '../../store/chat';
 import type { ToolCall } from '../../types/langgraph';
@@ -32,6 +32,7 @@ const MessageInputPanel = () => {
   const message = chatSliceState.message;
   const selectedThreadId = chatSliceState.selectedThreadId;
   const isStreaming = chatSliceState.isStreaming;
+  const nextPendingTool = chatSliceState.nextPendingTool;
 
   // 本地错误状态
   const [error, setError] = useState('');
@@ -87,7 +88,7 @@ const MessageInputPanel = () => {
     dispatch(setIsStreaming(false));
   };
 
-  // 发送消息到后端（chat_api2）
+  // 发送消息到后端（chat_api2），使用二进制长度前缀帧
   const sendMessage = async function* (messages: any[]) {
     try {
       const response = await httpClient.streamRequest('/api/chat2/message', {
@@ -100,14 +101,17 @@ const MessageInputPanel = () => {
       }
 
       const reader = response.body!.getReader();
-      const decoder = new TextDecoder();
+      const frameReader = new BinaryFrameReader();
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        yield chunk;
+        frameReader.append(value);
+        let parsedChunk;
+        while ((parsedChunk = frameReader.readMessage()) !== null) {
+          yield parsedChunk;
+        }
       }
     } catch (error) {
       console.log(error);
@@ -117,11 +121,49 @@ const MessageInputPanel = () => {
 
   // 处理发送消息
   const handleSendMessage = async () => {
-    if (!message.trim()) return;
-
     const inputMessage = message.trim();
     
     setError('');
+
+    // ===== 如果有待审批的工具，先拒绝工具 =====
+    if (nextPendingTool) {
+      const extra = inputMessage;
+      dispatch(setMessage(''));
+      try {
+        dispatch(setIsStreaming(true));
+        const response = await httpClient.streamRequest('/api/chat2/function_calling', {
+          method: 'POST',
+          body: {
+            tool_call_id: nextPendingTool.tool_call_id,
+            approved: false,
+            user_extra: extra,
+          }
+        } as any);
+        if (!response.ok) throw new Error('拒绝工具调用请求失败');
+
+        const reader = response.body!.getReader();
+        await readBinaryFrames(reader, (parsedChunk) => {
+          if (parsedChunk.type === 'state_update') {
+            console.log("拒绝工具后收到状态更新", parsedChunk.next_pending_tool);
+            dispatch(setMessagesTree({
+              messages: parsedChunk.messages,
+              active_leaf: parsedChunk.active_leaf,
+              active_path: parsedChunk.active_path,
+              branch_points: parsedChunk.branch_points,
+              next_pending_tool: parsedChunk.next_pending_tool,
+              summaries: parsedChunk.summaries,
+            }));
+          }
+        });
+      } catch (error) {
+        console.error('拒绝工具调用失败:', error);
+      } finally {
+        dispatch(setIsStreaming(false));
+      }
+      return;  // 拒绝后不再发送普通消息
+    }
+
+    if (!inputMessage) return;
 
     const userMessageId = generateMessageId();
     dispatch(setMessage(''));
@@ -166,147 +208,118 @@ const MessageInputPanel = () => {
       let newReasoningContent = "";
       const toolCallChunksMap = new Map<number, { name?: string; args: string; id?: string }>();
 
-      for await (const chunk of result) {
-        const lines = chunk.split('\n').filter(line => line.trim() !== '');
-        
-        for (const line of lines) {
-          try {
-            const parsedChunk = JSON.parse(line);
+      for await (const parsedChunk of result) {
+        // 处理流式传输中断信号
+        if (parsedChunk.interrupted) {
+          console.log("流式传输已被中断");
+          dispatch(setIsStreaming(false));
+          break;
+        }
 
-            // 处理流式传输中断信号
-            if (parsedChunk.interrupted) {
-              console.log("流式传输已被中断");
-              dispatch(setIsStreaming(false));
-              break;
-            }
+        // 处理统一状态更新（消息树 + 待审批工具）
+        if (parsedChunk.type === 'state_update') {
+          console.log("收到统一状态更新", parsedChunk.next_pending_tool);
+          dispatch(setMessagesTree({
+            messages: parsedChunk.messages,
+            active_leaf: parsedChunk.active_leaf,
+            active_path: parsedChunk.active_path,
+            branch_points: parsedChunk.branch_points,
+            next_pending_tool: parsedChunk.next_pending_tool,
+          }));
+          continue;
+        }
 
-            // 处理统一状态更新（消息树 + 工具请求）
-            if (parsedChunk.type === 'state_update') {
-              if (parsedChunk.messages) {
-                dispatch(setMessagesTree({
-                  messages: parsedChunk.messages,
-                  active_leaf: parsedChunk.active_leaf,
-                  active_path: parsedChunk.active_path,
-                  branch_points: parsedChunk.branch_points,
-                }));
-              }
-              // 从 state_update 中检查待审批的工具请求
-              if (parsedChunk.tool_requests) {
-                const trMap: Record<string, any> = parsedChunk.tool_requests;
-                const pendingEntry = Object.entries(trMap).find(([_, tr]) => tr.approved === null);
-                if (pendingEntry) {
-                  const [tool_call_id, info] = pendingEntry;
-                  dispatch(setCurrentToolRequest({
-                    tool_call_id,
-                    tool_name: info.tool_name,
-                    arguments: info.arguments,
-                    notified: true,
-                    approved: null,
-                    user_extra: null,
-                    result: null,
-                  }));
-                } else {
-                  dispatch(setCurrentToolRequest(null));
+        // 首次收到内容时创建 AI message（tool_calls 由 tool_requests 机制处理）
+        if (!currentAiMessageId && parsedChunk.content) {
+          const aiMessageId = generateMessageId();
+          currentAiMessageId = aiMessageId;
+          dispatch(createAiMessage({ id: aiMessageId }));
+        }
+
+        if (parsedChunk.content) {
+          newAiResponse += parsedChunk.content;
+        }
+
+        if (parsedChunk.reasoning_content) {
+          newReasoningContent += parsedChunk.reasoning_content;
+        }
+
+        // 实时更新流式渲染
+        if (currentAiMessageId && (parsedChunk.content || parsedChunk.reasoning_content)) {
+          const updateData: any = {
+            id: currentAiMessageId,
+            content: newAiResponse
+          };
+          if (newReasoningContent) {
+            updateData.reasoning_content = newReasoningContent;
+          }
+          dispatch(updateAiMessage(updateData));
+        }
+
+        // 上下文用量（流结束时后端通过 usage chunk 返回）
+        if (parsedChunk.usage_metadata && currentAiMessageId) {
+          dispatch(updateAiMessage({
+            id: currentAiMessageId,
+            content: newAiResponse,
+            usage_metadata: parsedChunk.usage_metadata
+          }));
+        }
+
+        // 流式 tool_calls（后端已合并，直接替换）
+        if (parsedChunk.tool_calls && parsedChunk.tool_calls.length > 0) {
+          for (const tc of parsedChunk.tool_calls) {
+            const index = tc.index ?? 0;
+            toolCallChunksMap.set(index, {
+              id: tc.id || toolCallChunksMap.get(index)?.id || '',
+              name: tc.function?.name || toolCallChunksMap.get(index)?.name || '',
+              args: tc.function?.arguments || ''
+            });
+          }
+
+          const toolCalls: ToolCall[] = [];
+          for (const [, existing] of toolCallChunksMap.entries()) {
+            try {
+              JSON.parse(existing.args);
+              toolCalls.push({
+                id: existing.id || 'unknown',
+                type: 'function',
+                function: {
+                  name: existing.name || 'unknown',
+                  arguments: existing.args
                 }
-              }
-              continue;
-            }
-
-            // 首次收到内容时创建 AI message（tool_calls 由 tool_requests 机制处理）
-            if (!currentAiMessageId && parsedChunk.content) {
-              const aiMessageId = generateMessageId();
-              currentAiMessageId = aiMessageId;
-              dispatch(createAiMessage({ id: aiMessageId }));
-            }
-
-            if (parsedChunk.content) {
-              newAiResponse += parsedChunk.content;
-            }
-
-            if (parsedChunk.reasoning_content) {
-              newReasoningContent += parsedChunk.reasoning_content;
-            }
-
-            // 实时更新流式渲染
-            if (currentAiMessageId && (parsedChunk.content || parsedChunk.reasoning_content)) {
-              const updateData: any = {
-                id: currentAiMessageId,
-                content: newAiResponse
-              };
-              if (newReasoningContent) {
-                updateData.reasoning_content = newReasoningContent;
-              }
-              dispatch(updateAiMessage(updateData));
-            }
-
-            // 上下文用量（流结束时后端通过 usage chunk 返回）
-            if (parsedChunk.usage_metadata && currentAiMessageId) {
-              dispatch(updateAiMessage({
-                id: currentAiMessageId,
-                content: newAiResponse,
-                usage_metadata: parsedChunk.usage_metadata
-              }));
-            }
-
-            // 流式 tool_calls（后端已合并，直接替换）
-            if (parsedChunk.tool_calls && parsedChunk.tool_calls.length > 0) {
-              for (const tc of parsedChunk.tool_calls) {
-                const index = tc.index ?? 0;
-                toolCallChunksMap.set(index, {
-                  id: tc.id || toolCallChunksMap.get(index)?.id || '',
-                  name: tc.function?.name || toolCallChunksMap.get(index)?.name || '',
-                  args: tc.function?.arguments || ''
-                });
-              }
-
-              const toolCalls: ToolCall[] = [];
-              for (const [, existing] of toolCallChunksMap.entries()) {
-                try {
-                  JSON.parse(existing.args);
-                  toolCalls.push({
-                    id: existing.id || 'unknown',
-                    type: 'function',
-                    function: {
-                      name: existing.name || 'unknown',
-                      arguments: existing.args
-                    }
-                  });
-                } catch (e) {
-                  const completedArgs = tryCompleteJSON(existing.args);
-                  toolCalls.push({
-                    id: existing.id || 'unknown',
-                    type: 'function',
-                    function: {
-                      name: existing.name || 'unknown',
-                      arguments: completedArgs
-                    }
-                  });
+              });
+            } catch (e) {
+              const completedArgs = tryCompleteJSON(existing.args);
+              toolCalls.push({
+                id: existing.id || 'unknown',
+                type: 'function',
+                function: {
+                  name: existing.name || 'unknown',
+                  arguments: completedArgs
                 }
-              }
-
-              if (currentAiMessageId && toolCalls.length > 0) {
-                dispatch(updateAiMessage({ id: currentAiMessageId, content: newAiResponse, tool_calls: toolCalls }));
-              }
-
-              // 传原始 args（未补全）给 fileToolHandler，让 processFileToolCalls 内部
-              // 通过 JSON.parse 失败 → tryCompleteJSON 补全 → isPartial=true → 路径稳定器处理
-              const rawToolCalls: ToolCall[] = [];
-              for (const [, existing] of toolCallChunksMap.entries()) {
-                rawToolCalls.push({
-                  id: existing.id || 'unknown',
-                  type: 'function',
-                  function: {
-                    name: existing.name || 'unknown',
-                    arguments: existing.args
-                  }
-                });
-              }
-              if (rawToolCalls.length > 0) {
-                processFileToolCalls(rawToolCalls);
-              }
+              });
             }
-          } catch (e) {
-            console.log('[STREAM] 无法解析chunk:', line);
+          }
+
+          if (currentAiMessageId && toolCalls.length > 0) {
+            dispatch(updateAiMessage({ id: currentAiMessageId, content: newAiResponse, tool_calls: toolCalls }));
+          }
+
+          // 传原始 args（未补全）给 fileToolHandler，让 processFileToolCalls 内部
+          // 通过 JSON.parse 失败 → tryCompleteJSON 补全 → isPartial=true → 路径稳定器处理
+          const rawToolCalls: ToolCall[] = [];
+          for (const [, existing] of toolCallChunksMap.entries()) {
+            rawToolCalls.push({
+              id: existing.id || 'unknown',
+              type: 'function',
+              function: {
+                name: existing.name || 'unknown',
+                arguments: existing.args
+              }
+            });
+          }
+          if (rawToolCalls.length > 0) {
+            processFileToolCalls(rawToolCalls);
           }
         }
       }
