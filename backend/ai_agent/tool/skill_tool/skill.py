@@ -1,5 +1,5 @@
 """
-skill 工具 - 对标 opencode-dev skill tool
+skill 工具
 
 Load a specialized skill when the task at hand matches one of the skills
 listed in the system prompt.

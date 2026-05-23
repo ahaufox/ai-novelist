@@ -1,5 +1,5 @@
 """
-glob 工具 - 对标 opencode-dev glob tool
+glob 工具
 
 - Fast file pattern matching tool that works with any codebase size
 - Supports glob patterns like "**/*.py" or "src/**/*.ts"

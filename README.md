@@ -16,10 +16,7 @@
 ---
 
 ## 1. 工具调用
-和cursor/ cline/ roo code/ kilo code等核心逻辑保持一致，部分设计有所出入
-
-- 读取文件工具使用引用更新，无需反复读取，节省token开销，提升正确率
-- 借鉴大佬Can Duruk的Hashline方案，差异替换工具无需输出完整旧内容，只需输出两位哈希。进一步节省开销，提升正确率
+和cursor/ cline/ roo code/ opencode/ kilo code等核心逻辑保持一致，部分设计有所出入
 
 支持人在回路,鼓励用户频繁介入AI的内容生成，及时纠偏
 
@@ -219,6 +216,7 @@ Total : 215 files,  18327 codes, 3673 comments, 3443 blanks, all 25443 lines
 
 ## 致谢 (Acknowledgements)
 
-本项目的开发在一定程度上借鉴了 `roo-code` 项目。我们对 `roo-code` 的开发者们表示衷心的感谢。
+本项目的开发在一定程度上借鉴了 `opencode` 和 `roo-code` 项目。我们对这些项目的开发者们表示衷心的感谢。
 
-`roo-code` 项目基于 Apache License 2.0 开源。根据其许可证要求，我们在项目中包含了其原始的许可证声明，您可以在 [`LICENSE-roo-code.txt`](./LICENSE-roo-code.txt) 文件中查看。
+- `opencode` 项目基于 MIT 协议开源，您可以在 [`LICENSE-opencode.txt`](./LICENSE-opencode.txt) 文件中查看。
+- `roo-code` 项目基于 Apache License 2.0 开源，您可以在 [`LICENSE-roo-code.txt`](./LICENSE-roo-code.txt) 文件中查看。

@@ -1,4 +1,4 @@
-"""rag_list_files 工具 - 对标 opencode-dev tool 规范
+"""rag_list_files 工具
 
 获取指定知识库内的文件列表
 """

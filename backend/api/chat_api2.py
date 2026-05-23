@@ -309,6 +309,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     messages_with_context = await _build_messages_with_context(
         trimmed_history, _mode, user_input, summaries
     )
+    logger.info(f"环境信息：{messages_with_context}")
 
     call_kwargs = {
         "model": litellm_model,
@@ -566,6 +567,35 @@ async def _execute_tool(
 # ==================== 工具调用处理 ====================
 
 
+def _fix_tool_user_order(messages: list[dict]) -> None:
+    """
+    检查并纠正消息列表末尾的非法顺序 [user, tool] → [tool, user]。
+
+    在 OpenAI function calling 格式中，assistant 发出 tool_calls 后，
+    必须紧跟所有 tool 结果消息，user 消息不能插在 tool 消息之间。
+    
+    当用户批准工具调用时附加了消息(user_extra)，而后又有后续工具执行时，
+    存储的消息顺序可能变成:
+        assistant (tool_calls: [A, B])
+        tool_A
+        user_extra       ← 用户为 tool_A 附加的消息
+        tool_B           ← 下一个工具的结果
+    最后两条是 [user, tool]，违反 OpenAI 格式，需要纠正为:
+        assistant (tool_calls: [A, B])
+        tool_A
+        tool_B
+        user_extra
+    """
+    while len(messages) >= 2:
+        last = messages[-1]
+        second_last = messages[-2]
+        if second_last.get("role") == "user" and last.get("role") == "tool":
+            # 交换最后两条消息
+            messages[-2], messages[-1] = messages[-1], messages[-2]
+        else:
+            break
+
+
 @router.post("/function_calling", summary="处理工具调用")
 async def function_calling(request: FunctionCallingRequest):
     thread_id = settings.get_config("thread_id")
@@ -617,6 +647,8 @@ async def function_calling(request: FunctionCallingRequest):
     }
     data.setdefault("messages", []).append(tool_msg)
     data["active_leaf"] = tool_msg["id"]
+    # 这里一般不会符合纠偏的条件，具体原因可以自行思考推理
+    _fix_tool_user_order(data["messages"])
     storage.save_data(thread_id, data)
 
     async def generate():
@@ -626,27 +658,29 @@ async def function_calling(request: FunctionCallingRequest):
             # 发送统一 state_update
             yield _build_state_update_data(thread_id)
 
+            # 保存用户附加消息到对话历史（无论是否还有待审批工具）
+            if request.user_extra:
+                latest_data = storage.get_data(thread_id)
+                user_extra_msg = {
+                    "id": f"msg-{uuid.uuid4()}",
+                    "role": "user",
+                    "content": request.user_extra,
+                    "parent_id": latest_data.get("active_leaf"),
+                    "created_at": time.time(),
+                }
+                latest_data["messages"].append(user_extra_msg)
+                latest_data["active_leaf"] = user_extra_msg["id"]
+                # 这里才是
+                _fix_tool_user_order(latest_data["messages"])
+                storage.save_data(thread_id, latest_data)
+
             # 3. 检查是否还有待审批的工具（消息链推导）
             pending = _get_pending_tool_calls(thread_id)
 
             if not pending:
-                # 所有工具执行完毕
-                latest_data = storage.get_data(thread_id)
-                if request.user_extra:
-                    user_extra_msg = {
-                        "id": f"msg-{uuid.uuid4()}",
-                        "role": "user",
-                        "content": request.user_extra,
-                        "parent_id": latest_data.get("active_leaf"),
-                        "created_at": time.time(),
-                    }
-                    latest_data["messages"].append(user_extra_msg)
-                    latest_data["active_leaf"] = user_extra_msg["id"]
-                    storage.save_data(thread_id, latest_data)
-
-                # 获取活跃路径作为 AI 上下文
+                # 所有工具执行完毕，流式 AI 响应
                 history = storage.get_active_path(thread_id)
-                ai_parent_id = latest_data.get("active_leaf")
+                ai_parent_id = storage.get_data(thread_id).get("active_leaf")
                 async for chunk in _stream_ai_response(thread_id, ai_parent_id, history):
                     yield chunk
         finally:

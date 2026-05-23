@@ -1,5 +1,5 @@
 """
-edit 工具 - 对标 opencode-dev edit tool
+edit 工具
 
 Performs exact string replacements in files.
 后端的核心逻辑：接收最终内容，直接写入文件。

@@ -138,7 +138,7 @@ export interface ApiGitStatus {
   changes: ApiGitChange[];
 }
 
-// ==================== 文件工具类型（新：对标 opencode-dev）====================
+// ==================== 文件工具类型 ====================
 
 /** edit 工具参数 */
 export interface EditToolParams {

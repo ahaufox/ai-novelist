@@ -1,5 +1,5 @@
 """
-shell 工具 - 对标 opencode-dev shell tool
+shell 工具
 
 Executes a given command in a persistent shell session with optional timeout.
 
@@ -34,7 +34,16 @@ from backend.ai_agent.tool.base import (
 
 
 class ShellParams(BaseModel):
-    command: str = Field(description="The command to execute (Windows cmd.exe syntax)")
+    command: str = Field(
+        description=(
+            "The command to execute in cmd.exe (Windows shell).\n\n"
+            "QUOTING RULES — cmd.exe ONLY accepts double quotes \"...\" as string delimiters.\n"
+            "Single quotes '...' are treated as LITERAL characters and WILL cause errors.\n\n"
+            "WRONG (bash-style, will fail): python script.py '{\"key\":\"value\"}'\n"
+            "RIGHT (Windows-style): python script.py \"{\\\"key\\\":\\\"value\\\"}\"\n\n"
+            "For paths with spaces, always use double quotes: \"C:\\Program Files\\app.exe\""
+        )
+    )
     description: str = Field(
         description=(
             "Clear, concise description of what this command does in 5-10 words. "

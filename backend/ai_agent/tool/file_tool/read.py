@@ -1,5 +1,5 @@
 """
-read 工具 - 对标 opencode-dev read tool
+read 工具
 
 Read a file or directory from the local filesystem. If the path does not exist, an error is returned.
 

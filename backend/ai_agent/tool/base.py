@@ -1,6 +1,5 @@
 """
 工具基础框架
-对标 opencode-dev 的 Tool.Def / ExecuteResult / Context 接口
 
 定义：
 - ToolDef: 工具定义（id, description, parameters, execute）
@@ -36,7 +35,7 @@ from pydantic import BaseModel
 
 @dataclass
 class ExecuteResult:
-    """工具执行结果，对标 opencode-dev ExecuteResult"""
+    """工具执行结果"""
     title: str                                       # 简短标题
     output: str                                      # LLM 可读的文本输出
     metadata: dict = field(default_factory=dict)     # 结构化元数据
@@ -49,7 +48,7 @@ class ExecuteResult:
 
 @dataclass
 class ToolContext:
-    """工具执行上下文，对标 opencode-dev Tool.Context"""
+    """工具执行上下文"""
     session_id: str
     message_id: str
     agent: str = ""                                  # 当前 agent 名称
@@ -64,7 +63,7 @@ class ToolContext:
 # ============================================================
 
 class ToolDef:
-    """工具定义，对标 opencode-dev Tool.Def
+    """工具定义
 
     子类需定义：
         id: str

@@ -187,23 +187,11 @@ const ToolRequestPanel = () => {
       })()
     : null;
 
-  const renderQuestions = () => {
-    if (!toolArgs?.questions) return null;
-    const questions = toolArgs.questions as Array<{ question: string; options?: string[] }>;
+  const renderQuestion = () => {
+    if (!toolArgs?.content) return null;
     return (
-      <div className="text-[13px] text-theme-white space-y-2 py-2">
-        {questions.map((q, i) => (
-          <div key={i} className="space-y-1">
-            <div className="font-medium">{q.question}</div>
-            {q.options && q.options.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-1">
-                {q.options.map((opt, j) => (
-                  <span key={j} className="text-theme-gray3 bg-theme-gray2 px-2 py-0.5 rounded">{opt}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+      <div className="text-[13px] text-theme-white space-y-1 py-2">
+        <div className="font-medium">{toolArgs.content}</div>
       </div>
     );
   };
@@ -215,7 +203,7 @@ const ToolRequestPanel = () => {
           <div className="text-theme-green text-[13px] font-medium">
             工具请求: {currentToolRequest.tool_name}
           </div>
-          {currentToolRequest.tool_name === 'question' && renderQuestions()}
+          {currentToolRequest.tool_name === 'question' && renderQuestion()}
           <div className="flex gap-4">
             <button
               className="flex-1 text-theme-white border-none rounded-small py-2 px-4 text-[13px] font-medium cursor-pointer transition-all hover:border-1 hover:border-solid hover:border-theme-green hover:text-theme-green"

@@ -1,5 +1,5 @@
 """
-write 工具 - 对标 opencode-dev write tool
+write 工具
 
 Writes a file to the local filesystem.
 后端的核心逻辑：接收最终内容，直接写入文件。

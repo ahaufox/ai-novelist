@@ -18,10 +18,7 @@ Allows AI to operate backend APIs, directly performing actions on behalf of the 
 ---
 
 ## 1. Tool Calling
-Consistent with the core logic of Cursor / Cline / Roo Code / Kilo Code, with some design differences:
-
-- **Reference-based file reading**: Uses reference updates, eliminating the need for repeated reads, saving token costs, and improving accuracy
-- **Hashline Solution**: Inspired by Can Duruk's Hashline approach, the diff replacement tool doesn't require outputting the full old content—only two-character hashes are needed, further reducing costs and improving accuracy
+Consistent with the core logic of Cursor / Cline / Roo Code / opencode / Kilo Code, with some design differences:
 
 Supports **Human-in-the-Loop**, encouraging users to frequently intervene in AI content generation for timely corrections
 
@@ -226,6 +223,7 @@ This project is licensed under the [MIT License](LICENSE).
 
 # Acknowledgements
 
-The development of this project has been partially inspired by the `roo-code` project. We express our heartfelt thanks to the developers of `roo-code`.
+The development of this project has been partially inspired by the `opencode` and `roo-code` projects. We express our heartfelt thanks to the developers of these projects.
 
-The `roo-code` project is open-sourced under the Apache License 2.0. According to its license requirements, we have included its original license statement in the project, which you can view in the [`LICENSE-roo-code.txt`](./LICENSE-roo-code.txt) file.
+- The `opencode` project is open-sourced under the MIT License. You can view it in the [`LICENSE-opencode.txt`](./LICENSE-opencode.txt) file.
+- The `roo-code` project is open-sourced under the Apache License 2.0. You can view it in the [`LICENSE-roo-code.txt`](./LICENSE-roo-code.txt) file.

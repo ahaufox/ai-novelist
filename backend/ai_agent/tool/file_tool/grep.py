@@ -1,5 +1,5 @@
 """
-grep 工具 - 对标 opencode-dev grep tool
+grep 工具
 
 - Fast content search tool that works with any codebase size
 - Searches file contents using regular expressions
@@ -11,6 +11,7 @@ grep 工具 - 对标 opencode-dev grep tool
   with `rg` (ripgrep) directly. Do NOT use `grep`.
 """
 
+import os
 import re
 import asyncio
 import logging
@@ -94,11 +95,13 @@ class GrepTool(ToolDef):
                 )
 
             logger.info(f"[GrepTool] 准备调用 ripgrep_service.search()")
+            ignore_file = os.path.join(settings.DATA_DIR, '.aiignore')
             raw_output = await ripgrep_service.search(
                 query=pattern,
                 directory=search_dir,
                 file_pattern=params.include,
                 max_results=MAX_RESULTS + 1,
+                ignore_file=ignore_file,
             )
             logger.info(f"[GrepTool] ripgrep_service.search() 返回, 结果长度={len(raw_output) if raw_output else 0}")
 

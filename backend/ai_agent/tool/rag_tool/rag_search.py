@@ -1,4 +1,4 @@
-"""rag_search 工具 - 对标 opencode-dev tool 规范
+"""rag_search 工具
 
 在向量数据库中检索语义相近内容
 """

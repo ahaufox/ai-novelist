@@ -64,92 +64,37 @@ class SystemPromptBuilder:
     
     
     def _get_skills_info(self, mode: str) -> str:
-        """获取指定模式的 Skills 简要信息（仅名称和描述）
+        """获取所有已安装 Skills 的简要信息（仅名称和描述）
+        
+        不再依赖 store.yaml 中的 "skills" 配置键，
+        直接读取 data/skills/ 目录下所有已安装的 Skill。
         
         Args:
-            mode: 模式名称
+            mode: 模式名称（保留参数，暂未使用）
             
         Returns:
             格式化的 Skills 简要信息字符串
         """
         try:
-            # 从配置中获取当前模式的 skills 列表
-            skill_names = settings.get_config("mode", mode, "skills", default=[])
-            
-            if not skill_names or not isinstance(skill_names, list):
-                return ""
-            
-            # 使用 SkillLoader 加载并过滤 Skills
+            # 直接加载所有已安装的 Skills
             skill_loader = get_skill_loader()
-            skills = skill_loader.filter_skills(skill_names)
+            all_skills = skill_loader.load_all_skills()
             
-            if not skills:
+            if not all_skills:
                 return ""
+            
+            skills_list = list(all_skills.values())
             
             # 格式化 Skills 简要信息（只显示名称和描述）
-            return skill_loader.format_skills_for_prompt(skills)
+            return skill_loader.format_skills_for_prompt(skills_list)
             
         except Exception as e:
             logger.error(f"获取 Skills 信息失败: {e}")
             return ""
     
-    async def _get_loaded_skills_content(self, mode: str) -> str:
-        """获取已加载 Skill 的内容（用于末尾附加消息）
-        
-        Args:
-            mode: 模式名称
-            
-        Returns:
-            格式化的 Skill 内容字符串（格式：[Skill directory: path/] + content）
-        """
-        try:
-            # 从配置中获取当前模式的 skillPaths 列表
-            skill_paths = settings.get_config("mode", mode, "skillPaths", default=[])
-            
-            # 如果没有加载的 Skill，返回空字符串
-            if not skill_paths or not isinstance(skill_paths, list):
-                return "未加载任何skill"
-            
-            # 加载所有可用的 skills
-            skill_loader = get_skill_loader()
-            all_skills = skill_loader.load_all_skills()
-            
-            # 构建 skill_path 到 skill 对象的映射（通过 file_path 匹配）
-            skill_by_path = {}
-            for skill in all_skills.values():
-                skill_file_path = str(skill.file_path.resolve())
-                skill_by_path[skill_file_path] = skill
-            
-            # 构建格式化的 Skill 内容
-            skill_contents = []
-            
-            for skill_path in skill_paths:
-                if not isinstance(skill_path, str):
-                    continue
-                
-                try:
-                    # 通过路径查找对应的 skill 对象
-                    skill = skill_by_path.get(skill_path)
-                    
-                    if skill:
-                        skill_dir = str(skill.base_dir.resolve())
-                        content = skill.content
-                        
-                        # 格式：[Skill directory: path/] + content
-                        skill_contents.append(f"[Skill directory: {skill_dir}/]\n\n{content}")
-                    else:
-                        logger.warning(f"未找到 Skill 对象: {skill_path}")
-                except Exception as e:
-                    logger.error(f"读取 Skill 失败 {skill_path}: {e}")
-            
-            if skill_contents:
-                return f"[额外 Skill 内容]:\n\n{'\n\n'.join(skill_contents)}"
-            else:
-                return ""
-                
-        except Exception as e:
-            logger.error(f"获取已加载 Skill 内容失败: {e}")
-            return ""
+    # _get_loaded_skills_content 已移除。
+    # 不再持久化加载 skill 内容到系统环境。
+    # AI 通过 skill tool 按需加载 skill 内容。
     
     def _get_knowledge_bases_info(self) -> str:
         """获取知识库列表信息
@@ -379,11 +324,6 @@ class SystemPromptBuilder:
             tab_state_content = format_tab_state_for_prompt(tab_state)
             if tab_state_content:
                 context_parts.append(tab_state_content)
-            
-            # 添加已加载 Skill 内容
-            loaded_skills_content = await self._get_loaded_skills_content(mode or "")
-            if loaded_skills_content:
-                context_parts.append(loaded_skills_content)
             
             # 执行RAG检索并添加结果
             if enable_rag and user_input:

@@ -17,7 +17,7 @@
 import { useDispatch, useStore } from 'react-redux';
 import { useRef } from 'react';
 import { addTempFile } from '../store/file';
-import { createTempDiffTab, updateBackUp } from '../store/editor';
+import { createTempDiffTab, updateBackUp, setAiSuggestContent } from '../store/editor';
 import type { RootState } from '../types';
 import { findMatchingString, computeEditResult } from './editMatcher';
 import httpClient from './httpClient';
@@ -113,6 +113,8 @@ export const useFileToolHandler = () => {
           originalContent,
           modifiedContent: result.result,
         }));
+        // 保存 AI 建议的内容快照，用于批准时计算用户修改 diff
+        dispatch(setAiSuggestContent({ id: path, content: result.result }));
         break;
       }
 
@@ -129,6 +131,8 @@ export const useFileToolHandler = () => {
           originalContent,
           modifiedContent: content,
         }));
+        // 保存 AI 建议的内容快照，用于批准时计算用户修改 diff
+        dispatch(setAiSuggestContent({ id: path, content }));
         break;
       }
     }
