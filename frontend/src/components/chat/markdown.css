@@ -186,6 +186,15 @@
   font-weight: 500;
 }
 
+/* ===== 用户消息中的附件预览（Content Array block 1+） ===== */
+.markdown-body .attachment-preview {
+  font-size: 0.85em;
+  color: var(--color-gray1);
+  margin-top: 2px;
+  padding-left: 0.5em;
+  border-left: 2px solid var(--color-gray1);
+}
+
 /* ===== 数学公式 ===== */
 .markdown-body .katex {
   font-size: 1.05em;

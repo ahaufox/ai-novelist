@@ -5,6 +5,7 @@ from backend.ai_agent.core.system_prompt_builder import SystemPromptBuilder
 from backend.ai_agent.models.stream_interrupt_manager import stream_interrupt_manager
 from backend.storage.schema import init_db
 from backend.storage import service as storage
+from backend.file.file_service import read_file, resolve_file_path
 from litellm import acompletion
 
 import json
@@ -39,8 +40,12 @@ def _get_model_prefix(provider: str) -> str:
 
 
 def _count_tokens_approx(msg: dict) -> int:
-    """估算单条消息的 token 数，对齐 langchain count_tokens_approximately"""
-    chars = len(str(msg.get("content", "")))
+    """估算单条消息的 token 数，对齐 langchain count_tokens_approximately
+    
+    支持 Content Array 格式（数组→提取各 text part 拼接后统计）
+    """
+    content = msg.get("content", "")
+    chars = len(_extract_content_text(content)) if not isinstance(content, str) else len(content)
     chars += len(msg.get("role", ""))
     if msg.get("role") == "assistant" and msg.get("tool_calls"):
         chars += len(repr(msg["tool_calls"]))
@@ -188,6 +193,7 @@ def _build_state_update_data(thread_id: str) -> bytes:
         "branch_points": tree["branch_points"],
         "next_pending_tool": tree["next_pending_tool"],
         "summaries": data.get("summaries", []),
+        "pending_user_extras": data.get("pending_user_extras", []),
     })
 
 
@@ -224,6 +230,84 @@ def _get_pending_tool_calls(thread_id: str) -> list[dict]:
     return pending
 
 
+def _extract_content_text(content: str | list) -> str:
+    """从可能为 Content Array 的 content 字段中提取纯文本
+    
+    OpenAI 格式中 content 可以是字符串或数组，
+    如果是数组，提取所有 type=text 的文本拼接起来。
+    
+    Args:
+        content: content 字段值（字符串或数组）
+        
+    Returns:
+        拼接后的纯文本
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        texts = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                texts.append(part.get("text", ""))
+        return "\n".join(texts)
+    return str(content) if content else ""
+
+
+def _make_content_array(user_text: str, attachment_texts: list[str]) -> list[dict]:
+    """将用户文本和附件文本合并为 Content Array 格式
+    
+    Args:
+        user_text: 用户原始文本
+        attachment_texts: 附件文本列表
+        
+    Returns:
+        Content Array，第一个 part 为用户文本，后续为附件
+    """
+    parts = [{"type": "text", "text": user_text}]
+    for att in attachment_texts:
+        parts.append({"type": "text", "text": att})
+    return parts
+
+
+async def _resolve_at_attachments(user_input: str) -> list[str]:
+    """解析用户输入中的 @路径，读取文件内容，返回附件格式文本
+    
+    借用 SystemPromptBuilder 的 _extract_at_paths 方法，
+    不持久化到配置，仅用于当前对话轮次。
+    
+    Args:
+        user_input: 用户输入文本
+        
+    Returns:
+        附件文本列表，格式: 【用户附件 - 绝对路径】: \n内容
+    """
+    if not user_input:
+        return []
+    
+    # 借用 SystemPromptBuilder 的 _extract_at_paths 方法
+    at_paths = _system_prompt_builder._extract_at_paths(user_input)
+    if not at_paths:
+        return []
+    
+    attachments = []
+    for raw_path in at_paths:
+        try:
+            file_path = resolve_file_path(raw_path)
+            
+            if not file_path.exists() or not file_path.is_file():
+                continue
+            
+            content = await read_file(str(file_path))
+            if content:
+                abs_path = str(file_path.resolve())
+                attachments.append(f"【用户附件 - {abs_path}】:\n{content}")
+                
+        except Exception as e:
+            logger.error(f"处理 @路径 附件失败: {raw_path}, 错误: {e}")
+    
+    return attachments
+
+
 async def _build_messages_with_context(
     history: list[dict],
     mode: str,
@@ -234,6 +318,7 @@ async def _build_messages_with_context(
 
     系统提示词 → 作为 system role 消息放在最前面
     环境信息（文件树/知识库/Skills/RAG等） → 作为 user role 消息放在最后面
+    用户 @路径 附件已在保存消息时嵌入到 content array 中，无需在此处理。
 
     注入的消息不持久化到数据库，每次调用时动态构建。
     """
@@ -277,6 +362,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     _selected_model = settings.get_config("selectedModel")
     _selected_provider = settings.get_config("selectedProvider")
     _temperature = settings.get_config("mode", _mode, "temperature")
+    _top_p = settings.get_config("mode", _mode, "top_p")
     _max_tokens = settings.get_config("mode", _mode, "max_tokens")
 
     api_key = settings.get_provider_key(_selected_provider)
@@ -288,11 +374,14 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     if tool_dict:
         tools = [_tool_to_openai_schema(t) for t in tool_dict.values()]
 
-    # 从消息列表中提取最后一条 user 消息作为 user_input
+    print(f"[参数] 模式={_mode}, 模型={litellm_model}, temp={_temperature}, top_p={_top_p}, max_tokens={_max_tokens}")
+
+    # 从消息列表中提取最后一条 user 消息作为 user_input（用于 RAG 检索，需要纯文本）
+    # 注意：content 可能是 Content Array（@路径附件），用 _extract_content_text 提取纯文本
     user_input = ""
     for msg in reversed(history):
         if msg.get("role") == "user":
-            user_input = msg.get("content", "")
+            user_input = _extract_content_text(msg.get("content", ""))
             break
 
     # 收集摘要并过滤被替换的消息
@@ -315,6 +404,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
         "model": litellm_model,
         "messages": messages_with_context,
         "temperature": _temperature,
+        "top_p": _top_p,
         "max_tokens": _max_tokens,
         "timeout": 300,
         "stream": True,
@@ -325,7 +415,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     if tools:
         call_kwargs["tools"] = tools
 
-    logger.info(f"AI 响应参数: model={litellm_model}")
+    print(f"[参数] 上下文窗口={context_window}, 消息数={len(messages_with_context)}, 工具数={len(tools) if tools else 0}")
 
     response_stream = await acompletion(**call_kwargs)
 
@@ -428,13 +518,13 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
 async def send_chat_message(request: ChatMessageRequest):
     thread_id = settings.get_config("thread_id")
     stream_interrupt_manager.create_task(thread_id)
-    logger.info(f"为thread_id创建流式传输任务: {thread_id}")
 
     # 确保会话存在
     conv = storage.get_conversation(thread_id)
     if conv is None:
-        title = request.messages[-1].get("content", "新对话") if request.messages else "新对话"
-        storage.create_conversation(thread_id, title=title)
+        title_raw = request.messages[-1].get("content", "新对话") if request.messages else "新对话"
+        title = _extract_content_text(title_raw) if not isinstance(title_raw, str) else title_raw
+        storage.create_conversation(thread_id, title=title[:50])
 
     # 获取当前活跃叶子作为 parent_id
     data = storage.get_data(thread_id)
@@ -445,6 +535,14 @@ async def send_chat_message(request: ChatMessageRequest):
         user_msg = request.messages[-1]
         user_msg["parent_id"] = parent_id
         user_msg.setdefault("created_at", time.time())
+        
+        # 处理 @路径 附件：解析文件并转换为 Content Array 格式（持久化到DB）
+        user_content = user_msg.get("content", "")
+        if isinstance(user_content, str):
+            attachments = await _resolve_at_attachments(user_content)
+            if attachments:
+                user_msg["content"] = _make_content_array(user_content, attachments)
+        
         storage.append_message(thread_id, user_msg)
         # 更新 active_leaf 为用户消息
         data = storage.get_data(thread_id)
@@ -461,7 +559,6 @@ async def send_chat_message(request: ChatMessageRequest):
                 yield chunk
         finally:
             stream_interrupt_manager.remove_task(thread_id)
-            logger.info(f"清理流式传输任务: {thread_id},send_chat api已经正确执行")
 
     return StreamingResponse(generate(), media_type="application/octet-stream")
 
@@ -488,7 +585,6 @@ async def regenerate_message(request: RegenerateRequest):
                 yield chunk
         finally:
             stream_interrupt_manager.remove_task(thread_id)
-            logger.info(f"清理流式传输任务: {thread_id}")
 
     return StreamingResponse(generate(), media_type="application/octet-stream")
 
@@ -567,35 +663,6 @@ async def _execute_tool(
 # ==================== 工具调用处理 ====================
 
 
-def _fix_tool_user_order(messages: list[dict]) -> None:
-    """
-    检查并纠正消息列表末尾的非法顺序 [user, tool] → [tool, user]。
-
-    在 OpenAI function calling 格式中，assistant 发出 tool_calls 后，
-    必须紧跟所有 tool 结果消息，user 消息不能插在 tool 消息之间。
-    
-    当用户批准工具调用时附加了消息(user_extra)，而后又有后续工具执行时，
-    存储的消息顺序可能变成:
-        assistant (tool_calls: [A, B])
-        tool_A
-        user_extra       ← 用户为 tool_A 附加的消息
-        tool_B           ← 下一个工具的结果
-    最后两条是 [user, tool]，违反 OpenAI 格式，需要纠正为:
-        assistant (tool_calls: [A, B])
-        tool_A
-        tool_B
-        user_extra
-    """
-    while len(messages) >= 2:
-        last = messages[-1]
-        second_last = messages[-2]
-        if second_last.get("role") == "user" and last.get("role") == "tool":
-            # 交换最后两条消息
-            messages[-2], messages[-1] = messages[-1], messages[-2]
-        else:
-            break
-
-
 @router.post("/function_calling", summary="处理工具调用")
 async def function_calling(request: FunctionCallingRequest):
     thread_id = settings.get_config("thread_id")
@@ -647,38 +714,50 @@ async def function_calling(request: FunctionCallingRequest):
     }
     data.setdefault("messages", []).append(tool_msg)
     data["active_leaf"] = tool_msg["id"]
-    # 这里一般不会符合纠偏的条件，具体原因可以自行思考推理
-    _fix_tool_user_order(data["messages"])
     storage.save_data(thread_id, data)
 
     async def generate():
         try:
             stream_interrupt_manager.create_task(thread_id)
 
-            # 发送统一 state_update
-            yield _build_state_update_data(thread_id)
-
-            # 保存用户附加消息到对话历史（无论是否还有待审批工具）
+            # 保存用户附加消息到 pending 缓冲区（不直接写入 messages）
             if request.user_extra:
-                latest_data = storage.get_data(thread_id)
-                user_extra_msg = {
-                    "id": f"msg-{uuid.uuid4()}",
-                    "role": "user",
+                data = storage.get_data(thread_id)
+                data.setdefault("pending_user_extras", [])
+                data["pending_user_extras"].append({
+                    "tool_call_id": request.tool_call_id,
                     "content": request.user_extra,
-                    "parent_id": latest_data.get("active_leaf"),
-                    "created_at": time.time(),
-                }
-                latest_data["messages"].append(user_extra_msg)
-                latest_data["active_leaf"] = user_extra_msg["id"]
-                # 这里才是
-                _fix_tool_user_order(latest_data["messages"])
-                storage.save_data(thread_id, latest_data)
+                })
+                storage.save_data(thread_id, data)
+
+            # 发送统一 state_update（含 pending_user_extras）
+            yield _build_state_update_data(thread_id)
 
             # 3. 检查是否还有待审批的工具（消息链推导）
             pending = _get_pending_tool_calls(thread_id)
 
             if not pending:
-                # 所有工具执行完毕，流式 AI 响应
+                # 所有工具执行完毕 → 将 pending_user_extras 正式写入消息列表
+                data = storage.get_data(thread_id)
+                pending_extras = data.get("pending_user_extras", [])
+                if pending_extras:
+                    # parent_id 链：最后一个 tool → user_1 → user_2 → ...
+                    last_id = data["active_leaf"]
+                    for extra in pending_extras:
+                        user_msg = {
+                            "id": f"msg-{uuid.uuid4()}",
+                            "role": "user",
+                            "content": extra["content"],
+                            "parent_id": last_id,
+                            "created_at": time.time(),
+                        }
+                        data["messages"].append(user_msg)
+                        last_id = user_msg["id"]
+                    data["active_leaf"] = last_id
+                    data["pending_user_extras"] = []
+                    storage.save_data(thread_id, data)
+
+                # 流式 AI 响应
                 history = storage.get_active_path(thread_id)
                 ai_parent_id = storage.get_data(thread_id).get("active_leaf")
                 async for chunk in _stream_ai_response(thread_id, ai_parent_id, history):

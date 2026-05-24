@@ -15,10 +15,12 @@ const ToolRequestPanel = () => {
   // 直接读取后端计算的待审批工具，前端不做任何推导
   const currentToolRequest = useSelector((state: RootState) => state.chatSlice.nextPendingTool);
   const message = useSelector((state: RootState) => state.chatSlice.message);
-  const autoApproveEnabled = useSelector((state: RootState) => state.chatSlice.autoApproveEnabled);
   const currentData = useSelector((state: RootState) => state.tabSlice.currentData);
   const aiSuggestContent = useSelector((state: RootState) => state.tabSlice.aiSuggestContent);
+  const autoApproveEnabled = useSelector((state: RootState) => state.chatSlice.autoApproveEnabled);
+  const selectedModeId = useSelector((state: RootState) => state.chatSlice.selectedModeId);
   const autoApproveRef = useRef(false);
+  const autoApproveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const processingRef = useRef(false);
 
   const { processFileToolCalls } = useFileToolHandler();
@@ -165,19 +167,59 @@ const ToolRequestPanel = () => {
     }
   }, [dispatch, store, currentToolRequest, message, aiSuggestContent, currentData, processFileToolCalls]);
 
-  // 自动批准
+  // 自动批准：根据模式配置的工具列表决定是否自动批准
+  // 1. autoApproveEnabled 为主开关（用户通过 UI 控制）
+  // 2. 从后端获取当前模式的 tools 列表，若当前工具在列表内才自动批准
   useEffect(() => {
-    if (autoApproveEnabled && currentToolRequest && !autoApproveRef.current) {
-      autoApproveRef.current = true;
-      const timer = setTimeout(() => {
-        handleFunctionCalling(true);
-        autoApproveRef.current = false;
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (!currentToolRequest) {
-      autoApproveRef.current = false;
+    // 清除上一个定时器
+    if (autoApproveTimerRef.current !== null) {
+      clearTimeout(autoApproveTimerRef.current);
+      autoApproveTimerRef.current = null;
     }
-  }, [currentToolRequest, autoApproveEnabled, handleFunctionCalling]);
+    autoApproveRef.current = false;
+
+    if (!autoApproveEnabled || !currentToolRequest) return;
+
+    if (!selectedModeId) return;
+
+    const toolName = currentToolRequest.tool_name;
+
+    const checkAndAutoApprove = async () => {
+      try {
+        const toolList: string[] = await httpClient.get(`/api/mode/tool/modes/${selectedModeId}`);
+
+        if (toolList.includes(toolName)) {
+          console.log(
+            `%c[AutoApprove] 工具 "${toolName}" 在模式 "${selectedModeId}" 的批准列表中，1秒后自动批准`,
+            'color: #4ec9b0; font-weight: bold;'
+          );
+          autoApproveRef.current = true;
+          autoApproveTimerRef.current = setTimeout(() => {
+            handleFunctionCalling(true);
+            autoApproveRef.current = false;
+            autoApproveTimerRef.current = null;
+          }, 1000);
+        } else {
+          console.log(
+            `%c[AutoApprove] 工具 "${toolName}" 不在模式 "${selectedModeId}" 的批准列表中，等待用户操作`,
+            'color: #ffa500; font-weight: bold;'
+          );
+        }
+      } catch (error) {
+        console.error('[AutoApprove] 获取模式工具列表失败:', error);
+      }
+    };
+
+    checkAndAutoApprove();
+
+    return () => {
+      if (autoApproveTimerRef.current !== null) {
+        clearTimeout(autoApproveTimerRef.current);
+        autoApproveTimerRef.current = null;
+      }
+      autoApproveRef.current = false;
+    };
+  }, [currentToolRequest, autoApproveEnabled, handleFunctionCalling, selectedModeId]);
 
   // 解析工具参数用于渲染
   const toolArgs = currentToolRequest?.arguments

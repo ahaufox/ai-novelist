@@ -1,5 +1,11 @@
 // OpenAI/LiteLLM 消息格式类型定义
 
+// Content Block（OpenAI Content Array 格式中的单个元素）
+export interface ContentBlock {
+  type: 'text';
+  text: string;
+}
+
 // 工具调用（OpenAI 标准格式）
 export interface ToolCall {
   id: string;
@@ -50,7 +56,7 @@ export interface ResponseMetadata {
 // OpenAI 格式消息
 export interface OpenAIMessage {
   role: 'user' | 'assistant' | 'tool' | 'system';
-  content: string;
+  content: string | ContentBlock[];
   id: string;
   parent_id?: string | null;
   tool_calls?: ToolCall[];

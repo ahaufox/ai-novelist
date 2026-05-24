@@ -47,21 +47,27 @@ class SystemPromptBuilder:
         if not user_input:
             return []
         
-        # 匹配 @ 后面跟随的非空白字符（路径）
-        # 路径可以包含字母、数字、下划线、连字符、点、斜杠
-        pattern = r'@([\w\-\./]+)'
+        # 匹配 @ 后面跟随的非空白字符（路径），贪婪匹配以获取完整路径
+        # 路径可以包含字母、数字、下划线、连字符、点、斜杠、反斜杠、冒号（支持Windows绝对路径如 C:\）
+        pattern = r'@(\S+)'
         matches = re.findall(pattern, user_input)
+        
+        # 清理路径：去除末尾的标点符号（逗号、句号、感叹号、问号、括号等）
+        cleaned_paths = []
+        for path in matches:
+            path = path.rstrip('.,!?;:，。！？；：、\'"）)》】】')
+            if path:
+                cleaned_paths.append(path)
         
         # 去重并保持顺序
         seen = set()
         unique_paths = []
-        for path in matches:
+        for path in cleaned_paths:
             if path not in seen:
                 seen.add(path)
                 unique_paths.append(path)
         
         return unique_paths
-    
     
     def _get_skills_info(self, mode: str) -> str:
         """获取所有已安装 Skills 的简要信息（仅名称和描述）
@@ -266,6 +272,43 @@ class SystemPromptBuilder:
             logger.error(f"构建系统提示词时出错: {e}")
             return settings.get_config("mode", mode, "prompt", default="你是一个AI助手，负责为用户解决各种需求。")
     
+    async def _load_additional_info_files(self, mode: str) -> List[str]:
+        """加载模式配置中 additionalInfo 指定的文件内容
+        
+        从 store.yaml 中读取当前模式的 additionalInfo 配置，
+        遍历其中的文件路径，读取文件内容并格式化返回。
+        
+        Args:
+            mode: 模式名称
+            
+        Returns:
+            文件内容列表，每个元素是 "<文件路径>:\n<内容>" 的格式
+        """
+        try:
+            # 获取当前模式的 additionalInfo 配置
+            additional_info_paths = settings.get_config("mode", mode, "additionalInfo", default=[])
+            
+            if not additional_info_paths:
+                return []
+            
+            file_contents = []
+            for file_path in additional_info_paths:
+                try:
+                    # 读取文件内容
+                    content = await read_file(file_path)
+                    if content:
+                        file_contents.append(f"[{file_path}]:\n{content}")
+                    else:
+                        logger.warning(f"additionalInfo 文件内容为空: {file_path}")
+                except Exception as e:
+                    logger.error(f"读取 additionalInfo 文件失败: {file_path}, 错误: {e}")
+            
+            return file_contents
+            
+        except Exception as e:
+            logger.error(f"加载 additionalInfo 文件时出错: {e}")
+            return []
+    
     async def build_context_message(
         self,
         mode: Optional[str] = None,
@@ -319,11 +362,18 @@ class SystemPromptBuilder:
                 if file_tree_content:
                     context_parts.append(f"【当前工作区文件结构】\n{file_tree_content}")
             
-            # 请求并添加标签栏状态
+            # 添加标签栏状态
             tab_state = await request_tab_state()
             tab_state_content = format_tab_state_for_prompt(tab_state)
             if tab_state_content:
                 context_parts.append(tab_state_content)
+            
+            # 添加已加载的 additionalInfo 文件内容
+            if include_loaded_files and mode:
+                loaded_files = await self._load_additional_info_files(mode)
+                if loaded_files:
+                    combined = "\n\n".join(loaded_files)
+                    context_parts.append(f"【已加载的文件内容】\n{combined}")
             
             # 执行RAG检索并添加结果
             if enable_rag and user_input:
@@ -334,7 +384,7 @@ class SystemPromptBuilder:
             # 合并所有部分
             if context_parts:
                 context_message = "\n\n".join(context_parts)
-                logger.info(f"上下文消息构建完成，包含部分: {len(context_parts)}")
+                logger.info(f"上下文消息构建完成，包含 {len(context_parts)} 个部分")
                 return context_message
             else:
                 return ""

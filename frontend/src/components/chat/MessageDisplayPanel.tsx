@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faAngleRight, faAngleUp, faTrash, faRotateRight, faEdit, faCopy, faCheck, faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import type { RootState } from '../../types';
-import type { Message, StreamChunk, ToolCall, BranchPoint } from '../../types/langgraph';
+import type { Message, StreamChunk, ToolCall, BranchPoint, ContentBlock } from '../../types/langgraph';
 import { setAvailableTools } from '../../store/mode';
 import { createAiMessage, updateAiMessage, updateMessages, setIsStreaming, setMessagesTree } from '../../store/chat';
 import httpClient from '../../utils/httpClient';
@@ -422,20 +422,61 @@ const MessageDisplayPanel = () => {
     }
   };
 
-  // 获取预览内容（第一行或前几个字）
-  const getPreviewContent = (content: string): string => {
-    const lines = content.split('\n');
-    const firstLine = lines[0]?.trim() || '';
+  // 将可能为 Content Array 的 content 提取为纯文本（拼接所有 text block）
+  const extractContentText = (content: string | ContentBlock[]): string => {
+    if (!content) return '';
+    if (Array.isArray(content)) {
+      return content
+        .filter((part): part is ContentBlock => part.type === 'text')
+        .map(part => part.text)
+        .join('\n');
+    }
+    return content;
+  };
+
+  // 获取第一行预览（不超过 50 字）
+  const getFirstLinePreview = (text: string): string => {
+    const firstLine = text.split('\n')[0]?.trim() || '';
     if (firstLine.length > 50) {
       return firstLine.substring(0, 50) + '...';
     }
     return firstLine || '...';
   };
 
-  // 预处理用户消息内容：将 @文件路径 替换为带样式的 HTML span
-  const preprocessUserContent = (content: string): string => {
+  // 获取预览内容（第一行或前几个字）
+  const getPreviewContent = (content: string | ContentBlock[]): string => {
+    const text = extractContentText(content);
+    return getFirstLinePreview(text);
+  };
+
+  // 预处理用户消息内容：
+  // - 普通 string：直接处理 @文件路径 高亮
+  // - Content Array（有附件）：block 0 正常高亮，block 1+ 用 │ 分隔 + CSS 溢出隐藏显示一行
+  const preprocessUserContent = (content: string | ContentBlock[]): string => {
     if (!content) return '';
-    // 匹配 @文件路径 的模式，替换为带 class 的 span
+
+    if (Array.isArray(content)) {
+      const textBlocks = content.filter((part): part is ContentBlock => part.type === 'text');
+      if (textBlocks.length === 0) return '';
+
+      // block 0：用户文本，处理 @路径 高亮
+      const userText = textBlocks[0]?.text ?? '';
+      const highlighted = userText.replace(/(@[^\s\n]+)/g, '<span class="file-path-mention">$1</span>');
+
+      // block 1+：附件，用 │ 分隔 + CSS truncate 单行溢出省略（自适应屏幕宽度）
+      const attachmentPreviews = textBlocks.slice(1).map(block => {
+        const firstLine = block.text.split('\n')[0]?.trim() || '';
+        const escaped = firstLine
+          .replace(/&/g, '&')
+          .replace(/</g, '<')
+          .replace(/>/g, '>');
+        return `<div class="attachment-preview truncate">${escaped}</div>`;
+      });
+
+      return highlighted + (attachmentPreviews.length > 0 ? '\n' + attachmentPreviews.join('') : '');
+    }
+
+    // 普通字符串
     return content.replace(/(@[^\s\n]+)/g, '<span class="file-path-mention">$1</span>');
   };
 
@@ -476,7 +517,7 @@ const MessageDisplayPanel = () => {
           </div>
           <div className="leading-[1.4] overflow-wrap break-word break-words text-theme-white mt-1">
             {isExpanded ? (
-              <MarkdownRenderer content={msg.content || ''} />
+              <MarkdownRenderer content={extractContentText(msg.content || '')} />
             ) : (
               <div className="text-sm">{previewContent}</div>
             )}
@@ -558,7 +599,7 @@ const MessageDisplayPanel = () => {
                         )}
                       </div>
                     )}
-                    <MarkdownRenderer content={msg.content || ''} />
+                    <MarkdownRenderer content={extractContentText(msg.content || '')} />
                     {msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0 && (
                       <div className="mt-2 p-2 bg-black/20 rounded-small">
                         {msg.tool_calls!.map((toolCall, toolIndex) => {
@@ -629,7 +670,7 @@ const MessageDisplayPanel = () => {
             <div className="flex gap-2">
               <button
                 className="text-xs flex items-center gap-1 text-theme-gray3 hover:text-theme-green transition-colors"
-                onClick={() => copyMessage(msg.content || '', msg.id)}
+                onClick={() => copyMessage(extractContentText(msg.content || ''), msg.id)}
                 title={copiedMessageId === msg.id ? "已复制" : "复制"}
               >
                 <FontAwesomeIcon icon={copiedMessageId === msg.id ? faCheck : faCopy} />
@@ -655,7 +696,7 @@ const MessageDisplayPanel = () => {
               {!isInterrupted && (
                 <button
                   className="text-xs flex items-center gap-1 text-theme-gray3 hover:text-theme-green transition-colors"
-                  onClick={() => editMessage(msg.id, isUser ? 'human' : 'ai', msg.content || '')}
+                  onClick={() => editMessage(msg.id, isUser ? 'human' : 'ai', extractContentText(msg.content || ''))}
                   title="编辑"
                 >
                   <FontAwesomeIcon icon={faEdit} />
