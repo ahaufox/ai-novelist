@@ -360,16 +360,20 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     """
     _stream_start = time.perf_counter()
     
+    _t = time.perf_counter()
     _mode = settings.get_config("currentMode", default="管家agent")
     _selected_model = settings.get_config("selectedModel")
     _selected_provider = settings.get_config("selectedProvider")
     _temperature = settings.get_config("mode", _mode, "temperature")
     _top_p = settings.get_config("mode", _mode, "top_p")
     _max_tokens = settings.get_config("mode", _mode, "max_tokens")
+    print(f"[耗时] 读取配置 (6次 get_config): {(time.perf_counter() - _t)*1000:.1f}ms")
 
+    _t = time.perf_counter()
     api_key = settings.get_provider_key(_selected_provider)
     base_url = settings.get_config("provider", _selected_provider, "url", default="")
     litellm_model = f"{_get_model_prefix(_selected_provider)}/{_selected_model}"
+    print(f"[耗时] 读取 provider key/url: {(time.perf_counter() - _t)*1000:.1f}ms")
 
     _t = time.perf_counter()
     tool_dict = await import_tools(mode=_mode)
