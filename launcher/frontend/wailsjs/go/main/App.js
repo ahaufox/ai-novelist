@@ -6,12 +6,36 @@ export function AutoCheckUpdate() {
   return window['go']['main']['App']['AutoCheckUpdate']();
 }
 
+export function BackendRunning() {
+  return window['go']['main']['App']['BackendRunning']();
+}
+
+export function BackendStart() {
+  return window['go']['main']['App']['BackendStart']();
+}
+
+export function BackendStop() {
+  return window['go']['main']['App']['BackendStop']();
+}
+
 export function CheckUpdate() {
   return window['go']['main']['App']['CheckUpdate']();
 }
 
-export function DownloadLaunch() {
-  return window['go']['main']['App']['DownloadLaunch']();
+export function Cleanup() {
+  return window['go']['main']['App']['Cleanup']();
+}
+
+export function FrontendRunning() {
+  return window['go']['main']['App']['FrontendRunning']();
+}
+
+export function FrontendStart() {
+  return window['go']['main']['App']['FrontendStart']();
+}
+
+export function FrontendStop() {
+  return window['go']['main']['App']['FrontendStop']();
 }
 
 export function GetGitServerAddress() {
@@ -56,10 +80,6 @@ export function IsMainProgramRunning() {
 
 export function IsProjectDeployed() {
   return window['go']['main']['App']['IsProjectDeployed']();
-}
-
-export function KillMainProgram() {
-  return window['go']['main']['App']['KillMainProgram']();
 }
 
 export function LoadConfig() {

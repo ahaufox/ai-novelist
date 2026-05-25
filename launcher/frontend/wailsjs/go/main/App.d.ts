@@ -5,9 +5,21 @@ import {gitman} from '../models';
 
 export function AutoCheckUpdate():Promise<void>;
 
+export function BackendRunning():Promise<boolean>;
+
+export function BackendStart():Promise<void>;
+
+export function BackendStop():Promise<void>;
+
 export function CheckUpdate():Promise<updater.UpdateStatus>;
 
-export function DownloadLaunch():Promise<void>;
+export function Cleanup():Promise<void>;
+
+export function FrontendRunning():Promise<boolean>;
+
+export function FrontendStart():Promise<void>;
+
+export function FrontendStop():Promise<void>;
 
 export function GetGitServerAddress():Promise<string>;
 
@@ -30,8 +42,6 @@ export function GitSwitchBranch(arg1:string):Promise<void>;
 export function IsMainProgramRunning():Promise<boolean>;
 
 export function IsProjectDeployed():Promise<boolean>;
-
-export function KillMainProgram():Promise<void>;
 
 export function LoadConfig():Promise<updater.Config>;
 

@@ -358,6 +358,8 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
         parent_msg_id: AI 回复消息的 parent_id（通常是上一条用户消息 id）
         history: 发送给 AI 的活跃路径消息列表（已含注入上下文）
     """
+    _stream_start = time.perf_counter()
+    
     _mode = settings.get_config("currentMode", default="管家agent")
     _selected_model = settings.get_config("selectedModel")
     _selected_provider = settings.get_config("selectedProvider")
@@ -369,7 +371,9 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     base_url = settings.get_config("provider", _selected_provider, "url", default="")
     litellm_model = f"{_get_model_prefix(_selected_provider)}/{_selected_model}"
 
+    _t = time.perf_counter()
     tool_dict = await import_tools(mode=_mode)
+    logger.info(f"[耗时] _stream_ai_response - import_tools: {(time.perf_counter() - _t)*1000:.1f}ms")
     tools = None
     if tool_dict:
         tools = [_tool_to_openai_schema(t) for t in tool_dict.values()]
@@ -385,19 +389,25 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
             break
 
     # 收集摘要并过滤被替换的消息
+    _t = time.perf_counter()
     data = storage.get_data(thread_id)
     summaries = data.get("summaries", [])
     summary_text, filtered_history = _collect_summaries_and_filter(history, summaries)
+    logger.info(f"[耗时] _stream_ai_response - 收集摘要: {(time.perf_counter() - _t)*1000:.1f}ms")
 
     # 裁剪超限消息
+    _t = time.perf_counter()
     context_window = settings.get_config(
         "provider", _selected_provider, "favoriteModels", "chat", _selected_model
     ) or 4096
     trimmed_history = _trim_history(filtered_history, context_window - _max_tokens)
+    logger.info(f"[耗时] _stream_ai_response - 裁剪历史消息: {(time.perf_counter() - _t)*1000:.1f}ms")
 
+    _t = time.perf_counter()
     messages_with_context = await _build_messages_with_context(
         trimmed_history, _mode, user_input, summaries
     )
+    logger.info(f"[耗时] _stream_ai_response - 构建上下文消息: {(time.perf_counter() - _t)*1000:.1f}ms")
     logger.info(f"环境信息：{messages_with_context}")
 
     call_kwargs = {
@@ -417,7 +427,10 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
 
     print(f"[参数] 上下文窗口={context_window}, 消息数={len(messages_with_context)}, 工具数={len(tools) if tools else 0}")
 
+    _t = time.perf_counter()
     response_stream = await acompletion(**call_kwargs)
+    logger.info(f"[耗时] _stream_ai_response - acompletion 首包耗时: {(time.perf_counter() - _t)*1000:.1f}ms")
+    logger.info(f"[耗时] _stream_ai_response - 前置准备（总计）: {(time.perf_counter() - _stream_start)*1000:.1f}ms")
 
     full_content = ""
     full_reasoning = ""

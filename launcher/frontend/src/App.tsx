@@ -6,14 +6,13 @@ import {
   addLog,
   setLogs,
   setCopied,
-  setMainRunning,
+  setBackendRunning,
+  setFrontendRunning,
   setProgress,
   setUpdateStatus,
   setCheckingUpdate,
   setUpdating,
   setVersion,
-  setLaunching,
-  setLaunchPhase,
   resetProgress,
   addWebviewTab,
 } from './store/launcher';
@@ -22,10 +21,14 @@ import {
   CheckUpdate,
   GetLogs,
   GetVersion,
-  IsMainProgramRunning,
+  BackendRunning,
+  FrontendRunning,
   IsProjectDeployed,
   PrepareEnvironment,
-  DownloadLaunch,
+  BackendStart,
+  BackendStop,
+  FrontendStart,
+  FrontendStop,
   LoadConfig,
   PerformUpdate,
 } from '../wailsjs/go/main/App';
@@ -43,9 +46,8 @@ function App() {
     updating,
     progress,
     copied,
-    mainRunning,
-    launching,
-    launchPhase,
+    backendRunning,
+    frontendRunning,
     webviewTabs,
   } = useSelector((state: RootState) => state.launcherSlice);
 
@@ -54,6 +56,8 @@ function App() {
   const [mainTab, setMainTab] = useState<'main' | 'version' | 'website' | 'app'>('main');
   const [deployed, setDeployed] = useState<boolean>(false);
   const [preparing, setPreparing] = useState(false);
+  const [backendLoading, setBackendLoading] = useState(false);
+  const [frontendLoading, setFrontendLoading] = useState(false);
 
   const refreshStatus = async () => {
     try {
@@ -75,7 +79,9 @@ function App() {
         }
         refreshStatus();
       });
-      IsMainProgramRunning().then((running: boolean) => dispatch(setMainRunning(running)));
+      // 查询后端/前端运行状态
+      BackendRunning().then((r: boolean) => dispatch(setBackendRunning(r)));
+      FrontendRunning().then((r: boolean) => dispatch(setFrontendRunning(r)));
     });
 
     const offLog = EventsOn('log', (data: string) => {
@@ -86,12 +92,10 @@ function App() {
       dispatch(setProgress(p));
     });
 
-    const offMainState = EventsOn('main-program-state', (running: boolean) => {
-      dispatch(setMainRunning(running));
-      if (!running) {
-        dispatch(setLaunching(false));
-        dispatch(setLaunchPhase(''));
-      }
+    const offMainState = EventsOn('main-program-state', () => {
+      // 当后端或前端状态变化时，重新查询
+      BackendRunning().then((r: boolean) => dispatch(setBackendRunning(r)));
+      FrontendRunning().then((r: boolean) => dispatch(setFrontendRunning(r)));
     });
 
     const offWebview = EventsOn('open-webview-tab', (data: { title: string; url: string }) => {
@@ -149,7 +153,6 @@ function App() {
     setPreparing(true);
     try {
       await PrepareEnvironment();
-      // 环境准备完成后重新检查项目部署状态，刷新「下载启动」按钮状态
       const d = await IsProjectDeployed();
       setDeployed(d);
     } catch (err: any) {
@@ -160,16 +163,55 @@ function App() {
     }
   };
 
-  const handleDownloadLaunch = async () => {
-    dispatch(setLaunching(true));
-    dispatch(setLaunchPhase('下载依赖并启动...'));
-    try {
-      await DownloadLaunch();
-    } catch (err: any) {
-      const msg = err?.message || String(err);
-      dispatch(addLog(`启动失败: ${msg}\n`));
-      dispatch(setLaunching(false));
-      dispatch(setLaunchPhase(''));
+  const handleBackendToggle = async () => {
+    if (backendRunning) {
+      setBackendLoading(true);
+      try {
+        await BackendStop();
+        dispatch(setBackendRunning(false));
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        dispatch(addLog(`关闭后端失败: ${msg}\n`));
+      } finally {
+        setBackendLoading(false);
+      }
+    } else {
+      setBackendLoading(true);
+      try {
+        await BackendStart();
+        dispatch(setBackendRunning(true));
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        dispatch(addLog(`启动后端失败: ${msg}\n`));
+      } finally {
+        setBackendLoading(false);
+      }
+    }
+  };
+
+  const handleFrontendToggle = async () => {
+    if (frontendRunning) {
+      setFrontendLoading(true);
+      try {
+        await FrontendStop();
+        dispatch(setFrontendRunning(false));
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        dispatch(addLog(`关闭前端失败: ${msg}\n`));
+      } finally {
+        setFrontendLoading(false);
+      }
+    } else {
+      setFrontendLoading(true);
+      try {
+        await FrontendStart();
+        dispatch(setFrontendRunning(true));
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        dispatch(addLog(`启动前端失败: ${msg}\n`));
+      } finally {
+        setFrontendLoading(false);
+      }
     }
   };
 
@@ -200,6 +242,14 @@ function App() {
       handleCheckUpdate();
     }
   };
+
+  const backendBtnText = backendRunning
+    ? (backendLoading ? '关闭中...' : '关闭后端')
+    : (backendLoading ? '启动中...' : '后端启动');
+
+  const frontendBtnText = frontendRunning
+    ? (frontendLoading ? '关闭中...' : '关闭前端')
+    : (frontendLoading ? '启动中...' : '前端启动');
 
   return (
     <div className="app" style={{ background: theme.black, color: theme.white }}>
@@ -238,24 +288,32 @@ function App() {
                 <button
                   className="btn warn"
                   onClick={handleUpdateButtonClick}
-                  disabled={checkingUpdate || updating || launching || preparing}
+                  disabled={checkingUpdate || updating || preparing}
                 >
                   {getUpdateButtonText()}
                 </button>
                 <button
                   className="btn"
                   onClick={handlePrepareEnvironment}
-                  disabled={preparing || launching || updating}
+                  disabled={preparing || updating}
                 >
                   {preparing ? '准备中...' : '准备环境'}
                 </button>
                 <button
-                  className="btn primary"
-                  onClick={handleDownloadLaunch}
-                  disabled={mainRunning || launching || preparing || !deployed}
-                  title={mainRunning ? '主程序正在运行中' : !deployed ? '请先下载项目' : ''}
+                  className={`btn ${backendRunning ? 'danger' : 'primary'}`}
+                  onClick={handleBackendToggle}
+                  disabled={backendLoading || preparing || !deployed}
+                  title={!deployed ? '请先下载项目' : ''}
                 >
-                  {mainRunning ? '运行中' : launching ? '下载启动中...' : '下载启动'}
+                  {backendBtnText}
+                </button>
+                <button
+                  className={`btn ${frontendRunning ? 'danger' : 'primary'}`}
+                  onClick={handleFrontendToggle}
+                  disabled={frontendLoading || preparing || !deployed}
+                  title={!deployed ? '请先下载项目' : ''}
+                >
+                  {frontendBtnText}
                 </button>
                 <button
                   className={`btn ${copied ? 'success' : ''}`}
@@ -271,14 +329,6 @@ function App() {
                 </div>
               </div>
             </div>
-
-
-
-            {launching && (
-              <div className="launch-phase" style={{ color: theme.accent }}>
-                {launchPhase}
-              </div>
-            )}
 
             {progress > 0 && progress < 100 && (
               <div className="progress-bar">
@@ -306,21 +356,22 @@ function App() {
           </>
         ) : mainTab === 'version' ? (
           <GitManager />
-        ) : mainTab === 'website' ? (
-          <iframe
-            className="website-frame"
-            src="https://denghuominghui.top/"
-            title="官网"
-            sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-          />
-        ) : (
-          <iframe
-            className="website-frame"
-            src="http://localhost:3000"
-            title="青烛"
-            sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-          />
-        )}
+        ) : null}
+
+        {/* 始终渲染 iframe，display:none 隐藏不活动的标签页，避免切换时销毁重建 */}
+        <iframe
+          className="website-frame"
+          src="https://denghuominghui.top/"
+          title="官网"
+          style={{ display: mainTab === 'website' ? 'block' : 'none' }}
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+        />
+        <iframe
+          className="website-frame"
+          src="http://localhost:3000"
+          title="青烛"
+          style={{ display: mainTab === 'app' ? 'block' : 'none' }}
+        />
       </main>
     </div>
   );

@@ -8,6 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"launcher/internal/backend"
+	"launcher/internal/env"
+	"launcher/internal/frontend"
 	"launcher/internal/gitman"
 	"launcher/internal/gitservice"
 	"launcher/internal/launcher"
@@ -17,13 +20,15 @@ import (
 )
 
 type App struct {
-	ctx         context.Context
-	config      *updater.Config
-	logBuffer   []string
-	logMutex    sync.RWMutex
-	cmdFrontend *os.Process
-	cmdMutex    sync.Mutex
-	gitServer   *gitservice.Server
+	ctx           context.Context
+	config        *updater.Config
+	logBuffer     []string
+	logMutex      sync.RWMutex
+	cmdBackend    *os.Process
+	cmdFrontend   *os.Process
+	backendMutex  sync.Mutex
+	frontendMutex sync.Mutex
+	gitServer     *gitservice.Server
 }
 
 func NewApp() *App {
@@ -127,7 +132,6 @@ func (a *App) CheckUpdate() (*updater.UpdateStatus, error) {
 	if a.config == nil {
 		return nil, fmt.Errorf("配置未加载")
 	}
-	// 检查更新时先同步远程分支
 	updater.SyncBranchesFromRemote(a.config, a)
 	return updater.CheckUpdateStatus(a.config, a)
 }
@@ -148,72 +152,178 @@ func (a *App) PrepareEnvironment() error {
 	return launcher.PrepareEnvironment(projectDir, a)
 }
 
-func (a *App) DownloadLaunch() error {
-	if a.config == nil {
-		return fmt.Errorf("配置未加载")
-	}
+// ─── 后端控制 ───
 
-	a.cmdMutex.Lock()
-	defer a.cmdMutex.Unlock()
-	if a.cmdFrontend != nil {
-		return fmt.Errorf("主程序已在运行中")
+func (a *App) BackendStart() error {
+	a.backendMutex.Lock()
+	defer a.backendMutex.Unlock()
+
+	if a.cmdBackend != nil {
+		return fmt.Errorf("后端已在运行中")
 	}
 
 	projectDir := a.getProjectDir()
+	if projectDir == "" {
+		return fmt.Errorf("项目目录未设置")
+	}
 
-	go func() {
-		result, err := launcher.DownloadLaunch(projectDir, a)
-		if err != nil {
-			a.Logf("启动失败: %v", err)
-			a.emitMainProgramState(false)
-			return
+	// 检测 Python
+	pythonPath, ok := env.DetectVenvPython(projectDir)
+	if !ok {
+		a.Logf("未找到虚拟环境，检测系统 Python...")
+		check := env.CheckSystemPython()
+		if check.Found && check.Ok {
+			realPythonPath, err := env.FindSystemPython()
+			if err != nil {
+				return fmt.Errorf("获取系统 Python 真实路径失败: %w", err)
+			}
+			pythonPath, err = env.EnsureVenv(projectDir, realPythonPath, a)
+			if err != nil {
+				return fmt.Errorf("创建虚拟环境失败: %w", err)
+			}
+		} else {
+			return fmt.Errorf("Python 环境未就绪，请先点击「准备环境」")
 		}
+	}
+	a.Logf("使用 Python: %s", pythonPath)
 
-		a.cmdMutex.Lock()
-		a.cmdFrontend = result.FrontendCmd.Process
-		a.cmdMutex.Unlock()
+	// pip install（每次都确保依赖最新）
+	a.Logf("=== 安装后端依赖 ===")
+	if err := backend.PipInstall(projectDir, pythonPath, a); err != nil {
+		return fmt.Errorf("安装后端依赖失败: %w", err)
+	}
 
-		a.emitMainProgramState(true)
+	// 启动后端
+	a.Logf("=== 启动 Python 后端 ===")
+	cmd, err := backend.Start(projectDir, pythonPath, a)
+	if err != nil {
+		return fmt.Errorf("启动后端失败: %w", err)
+	}
 
-		result.FrontendCmd.Wait()
+	// 等待后端就绪
+	a.Logf("=== 等待后端就绪 ===")
+	if err := backend.WaitForHealthy(8000, 60*time.Second); err != nil {
+		cmd.Process.Kill()
+		return fmt.Errorf("后端健康检查失败: %w", err)
+	}
 
-		a.cmdMutex.Lock()
-		a.cmdFrontend = nil
-		a.cmdMutex.Unlock()
-		a.emitMainProgramState(false)
-	}()
-
+	a.cmdBackend = cmd.Process
+	a.Logf("后端启动成功 (PID: %d)", cmd.Process.Pid)
+	a.emitMainProgramState(true)
 	return nil
 }
 
-func (a *App) IsMainProgramRunning() bool {
-	a.cmdMutex.Lock()
-	defer a.cmdMutex.Unlock()
+func (a *App) BackendStop() error {
+	a.backendMutex.Lock()
+	defer a.backendMutex.Unlock()
+
+	if a.cmdBackend == nil {
+		return nil
+	}
+
+	pid := a.cmdBackend.Pid
+	a.Logf("正在关闭后端 (PID: %d)...", pid)
+	a.cmdBackend.Kill()
+	a.cmdBackend = nil
+	a.Logf("后端已关闭")
+	a.emitMainProgramState(false)
+	return nil
+}
+
+func (a *App) BackendRunning() bool {
+	a.backendMutex.Lock()
+	defer a.backendMutex.Unlock()
+	return a.cmdBackend != nil
+}
+
+// ─── 前端控制 ───
+
+func (a *App) FrontendStart() error {
+	a.frontendMutex.Lock()
+	defer a.frontendMutex.Unlock()
+
+	if a.cmdFrontend != nil {
+		return fmt.Errorf("前端已在运行中")
+	}
+
+	projectDir := a.getProjectDir()
+	if projectDir == "" {
+		return fmt.Errorf("项目目录未设置")
+	}
+
+	// 检测 Node.js
+	nodePath, ok := env.DetectNode(projectDir)
+	if !ok {
+		return fmt.Errorf("Node.js 环境未就绪，请先点击「准备环境」")
+	}
+	a.Logf("使用 Node.js: %s", nodePath)
+
+	// npm install（每次都确保依赖最新）
+	a.Logf("=== 安装前端依赖 ===")
+	if err := frontend.NpmInstall(projectDir, nodePath, a); err != nil {
+		return fmt.Errorf("安装前端依赖失败: %w", err)
+	}
+
+	// 启动前端（Vite dev server）
+	a.Logf("=== 启动前端 ===")
+	cmd, err := frontend.Start(projectDir, nodePath, a)
+	if err != nil {
+		return fmt.Errorf("启动前端失败: %w", err)
+	}
+
+	a.cmdFrontend = cmd.Process
+	a.Logf("前端启动成功 (PID: %d)", cmd.Process.Pid)
+	a.emitMainProgramState(true)
+	return nil
+}
+
+func (a *App) FrontendStop() error {
+	a.frontendMutex.Lock()
+	defer a.frontendMutex.Unlock()
+
+	if a.cmdFrontend == nil {
+		return nil
+	}
+
+	pid := a.cmdFrontend.Pid
+	a.Logf("正在关闭前端 (PID: %d)...", pid)
+	a.cmdFrontend.Kill()
+	a.cmdFrontend = nil
+	a.Logf("前端已关闭")
+	a.emitMainProgramState(false)
+	return nil
+}
+
+func (a *App) FrontendRunning() bool {
+	a.frontendMutex.Lock()
+	defer a.frontendMutex.Unlock()
 	return a.cmdFrontend != nil
+}
+
+// ─── 清理 ───
+
+func (a *App) Cleanup() {
+	a.Logf("=== 正在清理所有进程 ===")
+
+	a.FrontendStop()
+	a.BackendStop()
+
+	if a.gitServer != nil {
+		a.gitServer.Stop()
+		a.gitServer = nil
+	}
+
+	a.Logf("=== 清理完成 ===")
+}
+
+func (a *App) IsMainProgramRunning() bool {
+	return a.BackendRunning() || a.FrontendRunning()
 }
 
 func (a *App) emitMainProgramState(running bool) {
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "main-program-state", running)
 	}
-}
-
-func (a *App) KillMainProgram() error {
-	a.cmdMutex.Lock()
-	defer a.cmdMutex.Unlock()
-
-	if a.cmdFrontend != nil {
-		a.cmdFrontend.Kill()
-		a.cmdFrontend = nil
-	}
-
-	// 停止Git服务
-	if a.gitServer != nil {
-		a.gitServer.Stop()
-		a.gitServer = nil
-	}
-
-	return nil
 }
 
 func (a *App) GetLogs() string {

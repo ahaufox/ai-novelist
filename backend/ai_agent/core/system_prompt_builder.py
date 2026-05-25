@@ -9,6 +9,7 @@
 
 import os
 import re
+import time
 from pathlib import Path
 from typing import Optional, List, Tuple
 import logging
@@ -21,6 +22,12 @@ from backend.ai_agent.utils.file_utils import split_paragraphs, format_file_with
 from backend.websocket.handlers.tab_handler import request_tab_state, format_tab_state_for_prompt
 
 logger = logging.getLogger(__name__)
+
+
+def _log_step(step_name: str, start: float):
+    """记录单个步骤的耗时"""
+    elapsed = time.perf_counter() - start
+    logger.info(f"[耗时] {step_name}: {elapsed*1000:.1f}ms")
 
 
 class SystemPromptBuilder:
@@ -141,6 +148,7 @@ class SystemPromptBuilder:
             格式化的RAG检索结果字符串
         """
         try:
+            _t = time.perf_counter()
             # 获取两步RAG配置
             rag_config = get_two_step_rag_config()
             kb_id = rag_config.get("id")
@@ -155,25 +163,30 @@ class SystemPromptBuilder:
             if kb_id not in knowledge_bases:
                 logger.warning(f"配置的知识库 {kb_name} (ID: {kb_id}) 不存在，跳过RAG检索")
                 return ""
+            _log_step("RAG - 获取配置和验证知识库", _t)
             logger.info(f"使用配置的知识库进行RAG检索: {kb_name} (ID: {kb_id})")
 
             # 执行异步检索
+            _t = time.perf_counter()
             results = await asearch_emb(
                 collection_name=kb_id,
                 search_input=user_input
             )
+            _log_step("RAG - asearch_emb 检索", _t)
             
             if not results:
                 logger.info("RAG检索未返回结果")
                 return ""
             
             # 格式化检索结果
+            _t = time.perf_counter()
             rag_parts = []
             for doc, score in results:
                 filename = doc.metadata.get('original_filename', '未知文件')
                 rag_parts.append(f"[来源: {filename}, 相似度: {score:.4f}]\n{doc.page_content}")
             
             rag_content = "\n\n".join(rag_parts)
+            _log_step("RAG - 格式化结果", _t)
             logger.info(f"RAG检索完成，共找到 {len(results)} 条相关文档")
             
             return rag_content
@@ -339,6 +352,7 @@ class SystemPromptBuilder:
         """
         try:
             context_parts = []
+            _ctx_start = time.perf_counter()
             
             # 添加过往消息总结
             if summary:
@@ -346,47 +360,61 @@ class SystemPromptBuilder:
             
             # 添加 Skills 信息
             if include_skills:
+                _t = time.perf_counter()
                 skills_info = self._get_skills_info(mode or "")
+                _log_step("获取 Skills 信息", _t)
                 if skills_info:
                     context_parts.append(skills_info)
             
             # 添加知识库列表信息
             if include_knowledge_bases:
+                _t = time.perf_counter()
                 knowledge_bases_info = self._get_knowledge_bases_info()
+                _log_step("获取知识库列表信息", _t)
                 if knowledge_bases_info:
                     context_parts.append(f"【可用知识库】\n{knowledge_bases_info}")
             
             # 添加文件树结构
             if include_file_tree:
+                _t = time.perf_counter()
                 file_tree_content = await self.get_file_tree_content()
+                _log_step("获取文件树结构", _t)
                 if file_tree_content:
                     context_parts.append(f"【当前工作区文件结构】\n{file_tree_content}")
             
             # 添加标签栏状态
+            _t = time.perf_counter()
             tab_state = await request_tab_state()
             tab_state_content = format_tab_state_for_prompt(tab_state)
+            _log_step("获取标签栏状态", _t)
             if tab_state_content:
                 context_parts.append(tab_state_content)
             
             # 添加已加载的 additionalInfo 文件内容
             if include_loaded_files and mode:
+                _t = time.perf_counter()
                 loaded_files = await self._load_additional_info_files(mode)
+                _log_step("加载 additionalInfo 文件", _t)
                 if loaded_files:
                     combined = "\n\n".join(loaded_files)
                     context_parts.append(f"【已加载的文件内容】\n{combined}")
             
             # 执行RAG检索并添加结果
             if enable_rag and user_input:
+                _t = time.perf_counter()
                 rag_content = await self._perform_rag_search(user_input)
+                _log_step("RAG 检索", _t)
                 if rag_content:
                     context_parts.append(f"【RAG检索结果】\n{rag_content}")
             
             # 合并所有部分
             if context_parts:
                 context_message = "\n\n".join(context_parts)
+                _log_step("上下文消息构建（总计）", _ctx_start)
                 logger.info(f"上下文消息构建完成，包含 {len(context_parts)} 个部分")
                 return context_message
             else:
+                _log_step("上下文消息构建（总计）", _ctx_start)
                 return ""
                 
         except Exception as e:

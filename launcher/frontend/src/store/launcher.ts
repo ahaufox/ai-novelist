@@ -15,9 +15,8 @@ export interface LauncherState {
   updating: boolean;
   progress: number;
   copied: boolean;
-  mainRunning: boolean;
-  launching: boolean;
-  launchPhase: string;
+  backendRunning: boolean;
+  frontendRunning: boolean;
   webviewTabs: WebviewTab[];
 }
 
@@ -29,9 +28,8 @@ const initialState: LauncherState = {
   updating: false,
   progress: 0,
   copied: false,
-  mainRunning: false,
-  launching: false,
-  launchPhase: '',
+  backendRunning: false,
+  frontendRunning: false,
   webviewTabs: [],
 };
 
@@ -63,14 +61,11 @@ export const launcherSlice = createSlice({
     setCopied: (state: Draft<LauncherState>, action: PayloadAction<boolean>) => {
       state.copied = action.payload;
     },
-    setMainRunning: (state: Draft<LauncherState>, action: PayloadAction<boolean>) => {
-      state.mainRunning = action.payload;
+    setBackendRunning: (state: Draft<LauncherState>, action: PayloadAction<boolean>) => {
+      state.backendRunning = action.payload;
     },
-    setLaunching: (state: Draft<LauncherState>, action: PayloadAction<boolean>) => {
-      state.launching = action.payload;
-    },
-    setLaunchPhase: (state: Draft<LauncherState>, action: PayloadAction<string>) => {
-      state.launchPhase = action.payload;
+    setFrontendRunning: (state: Draft<LauncherState>, action: PayloadAction<boolean>) => {
+      state.frontendRunning = action.payload;
     },
     resetProgress: (state: Draft<LauncherState>) => {
       state.progress = 0;
@@ -96,9 +91,8 @@ export const {
   setUpdating,
   setProgress,
   setCopied,
-  setMainRunning,
-  setLaunching,
-  setLaunchPhase,
+  setBackendRunning,
+  setFrontendRunning,
   resetProgress,
   addWebviewTab,
   removeWebviewTab,

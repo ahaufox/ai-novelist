@@ -27,6 +27,10 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 18, G: 18, B: 24, A: 1},
 		OnStartup:        app.startup,
 		OnDomReady:       func(ctx context.Context) {},
+		OnBeforeClose: func(ctx context.Context) (prevent bool) {
+			app.Cleanup()
+			return false
+		},
 		Bind: []interface{}{
 			app,
 		},
