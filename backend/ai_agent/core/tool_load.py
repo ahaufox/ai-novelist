@@ -33,21 +33,24 @@ async def import_tools(mode: str = None) -> dict:
     # 始终加载所有核心工具，不再按模式配置过滤
     # 模式的 tools 配置仅用于前端自动批准逻辑
     builtin_tools = dict(all_tools)
-    logger.info(f"[耗时] 加载核心工具: {(time.perf_counter() - _t)*1000:.1f}ms, 共 {len(builtin_tools)} 个")
+    _t_elapsed = (time.perf_counter() - _t)*1000
+    print(f"[耗时] 核心工具加载: {_t_elapsed:.1f}ms, 共 {len(builtin_tools)} 个")
     
     print(f"[工具] 核心: {list(builtin_tools.keys())}")
     
     # 2. 获取 MCP 工具（保持原有格式）
     _t = time.perf_counter()
     mcp_tools = await get_mcp_tools_as_objects()
-    logger.info(f"[耗时] 加载 MCP 工具: {(time.perf_counter() - _t)*1000:.1f}ms, 共 {len(mcp_tools)} 个")
+    _t_elapsed = (time.perf_counter() - _t)*1000
+    print(f"[耗时] MCP 工具加载: {_t_elapsed:.1f}ms, 共 {len(mcp_tools)} 个")
     
     # 3. 合并
     tools = {}
     tools.update(builtin_tools)
     tools.update(mcp_tools)
     
-    logger.info(f"[耗时] 加载全部工具（总计）: {(time.perf_counter() - _total_start)*1000:.1f}ms, 共 {len(tools)} 个")
+    _total_elapsed = (time.perf_counter() - _total_start)*1000
+    print(f"[耗时] 全部工具加载（总计）: {_total_elapsed:.1f}ms, 共 {len(tools)} 个")
     print(f"[工具] MCP: {list(mcp_tools.keys())}")
     print(f"[工具] 共 {len(tools)} 个 (核心 {len(builtin_tools)} + MCP {len(mcp_tools)})")
     return tools

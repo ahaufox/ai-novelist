@@ -374,12 +374,12 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     _t = time.perf_counter()
     tool_dict = await import_tools(mode=_mode)
     _t_cost = time.perf_counter() - _t
-    logger.info(f"[耗时] _stream_ai_response - import_tools: {_t_cost*1000:.1f}ms, 共 {len(tool_dict)} 个工具")
+    print(f"[耗时] import_tools: {_t_cost*1000:.1f}ms, 共 {len(tool_dict)} 个工具")
     tools = None
     if tool_dict:
         _t_schema = time.perf_counter()
         tools = [_tool_to_openai_schema(t) for t in tool_dict.values()]
-        logger.info(f"[耗时] _stream_ai_response - 转换为 OpenAI schema: {(time.perf_counter() - _t_schema)*1000:.1f}ms")
+        print(f"[耗时] 转换为 OpenAI schema: {(time.perf_counter() - _t_schema)*1000:.1f}ms")
 
     print(f"[参数] 模式={_mode}, 模型={litellm_model}, temp={_temperature}, top_p={_top_p}, max_tokens={_max_tokens}")
 
@@ -396,7 +396,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     data = storage.get_data(thread_id)
     summaries = data.get("summaries", [])
     summary_text, filtered_history = _collect_summaries_and_filter(history, summaries)
-    logger.info(f"[耗时] _stream_ai_response - 收集摘要: {(time.perf_counter() - _t)*1000:.1f}ms")
+    print(f"[耗时] 收集摘要: {(time.perf_counter() - _t)*1000:.1f}ms")
 
     # 裁剪超限消息
     _t = time.perf_counter()
@@ -404,13 +404,13 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
         "provider", _selected_provider, "favoriteModels", "chat", _selected_model
     ) or 4096
     trimmed_history = _trim_history(filtered_history, context_window - _max_tokens)
-    logger.info(f"[耗时] _stream_ai_response - 裁剪历史消息: {(time.perf_counter() - _t)*1000:.1f}ms")
+    print(f"[耗时] 裁剪历史消息: {(time.perf_counter() - _t)*1000:.1f}ms")
 
     _t = time.perf_counter()
     messages_with_context = await _build_messages_with_context(
         trimmed_history, _mode, user_input, summaries
     )
-    logger.info(f"[耗时] _stream_ai_response - 构建上下文消息: {(time.perf_counter() - _t)*1000:.1f}ms")
+    print(f"[耗时] 构建上下文消息: {(time.perf_counter() - _t)*1000:.1f}ms")
     logger.info(f"环境信息：{messages_with_context}")
 
     call_kwargs = {
@@ -432,8 +432,8 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
 
     _t = time.perf_counter()
     response_stream = await acompletion(**call_kwargs)
-    logger.info(f"[耗时] _stream_ai_response - acompletion 首包耗时: {(time.perf_counter() - _t)*1000:.1f}ms")
-    logger.info(f"[耗时] _stream_ai_response - 前置准备（总计）: {(time.perf_counter() - _stream_start)*1000:.1f}ms")
+    print(f"[耗时] acompletion 首包耗时: {(time.perf_counter() - _t)*1000:.1f}ms")
+    print(f"[耗时] 前置准备（总计）: {(time.perf_counter() - _stream_start)*1000:.1f}ms")
 
     full_content = ""
     full_reasoning = ""
@@ -444,7 +444,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
 
     async for chunk in response_stream:
         if _first_chunk:
-            logger.info(f"[耗时] _stream_ai_response - 首个 content chunk 到达: {(time.perf_counter() - _stream_chunk_start)*1000:.1f}ms")
+            print(f"[耗时] 首个 content chunk 到达: {(time.perf_counter() - _stream_chunk_start)*1000:.1f}ms")
             _first_chunk = False
 
         if stream_interrupt_manager.is_interrupted(thread_id):
@@ -505,13 +505,13 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
             await asyncio.sleep(0)
 
     _stream_elapsed = time.perf_counter() - _stream_start
-    logger.info(f"[耗时] _stream_ai_response - 流式传输总耗时: {_stream_elapsed*1000:.1f}ms")
+    print(f"[耗时] 流式传输总耗时: {_stream_elapsed*1000:.1f}ms")
     if full_content:
-        logger.info(f"[耗时] _stream_ai_response - 生成文本长度: {len(full_content)} 字符")
+        print(f"[耗时] 生成文本长度: {len(full_content)} 字符")
     if full_reasoning:
-        logger.info(f"[耗时] _stream_ai_response - 推理内容长度: {len(full_reasoning)} 字符")
+        print(f"[耗时] 推理内容长度: {len(full_reasoning)} 字符")
     if tool_calls_accumulated:
-        logger.info(f"[耗时] _stream_ai_response - 生成工具调用: {len(tool_calls_accumulated)} 个")
+        print(f"[耗时] 生成工具调用: {len(tool_calls_accumulated)} 个")
 
     # 保存 assistant 消息到 data
     assistant_msg = {
