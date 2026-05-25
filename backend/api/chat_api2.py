@@ -367,25 +367,25 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     _temperature = settings.get_config("mode", _mode, "temperature")
     _top_p = settings.get_config("mode", _mode, "top_p")
     _max_tokens = settings.get_config("mode", _mode, "max_tokens")
-    print(f"[耗时] 读取配置 (6次 get_config): {(time.perf_counter() - _t)*1000:.1f}ms")
+    print(f"[耗时] 读取配置 (6次 get_config): {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
 
     _t = time.perf_counter()
     api_key = settings.get_provider_key(_selected_provider)
     base_url = settings.get_config("provider", _selected_provider, "url", default="")
     litellm_model = f"{_get_model_prefix(_selected_provider)}/{_selected_model}"
-    print(f"[耗时] 读取 provider key/url: {(time.perf_counter() - _t)*1000:.1f}ms")
+    print(f"[耗时] 读取 provider key/url: {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
 
     _t = time.perf_counter()
     tool_dict = await import_tools(mode=_mode)
     _t_cost = time.perf_counter() - _t
-    print(f"[耗时] import_tools: {_t_cost*1000:.1f}ms, 共 {len(tool_dict)} 个工具")
+    print(f"[耗时] import_tools: {_t_cost*1000:.1f}ms, 共 {len(tool_dict)} 个工具", flush=True)
     tools = None
     if tool_dict:
         _t_schema = time.perf_counter()
         tools = [_tool_to_openai_schema(t) for t in tool_dict.values()]
-        print(f"[耗时] 转换为 OpenAI schema: {(time.perf_counter() - _t_schema)*1000:.1f}ms")
+        print(f"[耗时] 转换为 OpenAI schema: {(time.perf_counter() - _t_schema)*1000:.1f}ms", flush=True)
 
-    print(f"[参数] 模式={_mode}, 模型={litellm_model}, temp={_temperature}, top_p={_top_p}, max_tokens={_max_tokens}")
+    print(f"[参数] 模式={_mode}, 模型={litellm_model}, temp={_temperature}, top_p={_top_p}, max_tokens={_max_tokens}", flush=True)
 
     # 从消息列表中提取最后一条 user 消息作为 user_input（用于 RAG 检索，需要纯文本）
     # 注意：content 可能是 Content Array（@路径附件），用 _extract_content_text 提取纯文本
@@ -400,7 +400,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     data = storage.get_data(thread_id)
     summaries = data.get("summaries", [])
     summary_text, filtered_history = _collect_summaries_and_filter(history, summaries)
-    print(f"[耗时] 收集摘要: {(time.perf_counter() - _t)*1000:.1f}ms")
+    print(f"[耗时] 收集摘要: {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
 
     # 裁剪超限消息
     _t = time.perf_counter()
@@ -408,13 +408,13 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
         "provider", _selected_provider, "favoriteModels", "chat", _selected_model
     ) or 4096
     trimmed_history = _trim_history(filtered_history, context_window - _max_tokens)
-    print(f"[耗时] 裁剪历史消息: {(time.perf_counter() - _t)*1000:.1f}ms")
+    print(f"[耗时] 裁剪历史消息: {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
 
     _t = time.perf_counter()
     messages_with_context = await _build_messages_with_context(
         trimmed_history, _mode, user_input, summaries
     )
-    print(f"[耗时] 构建上下文消息: {(time.perf_counter() - _t)*1000:.1f}ms")
+    print(f"[耗时] 构建上下文消息: {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
     logger.info(f"环境信息：{messages_with_context}")
 
     call_kwargs = {
@@ -432,12 +432,12 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     if tools:
         call_kwargs["tools"] = tools
 
-    print(f"[参数] 上下文窗口={context_window}, 消息数={len(messages_with_context)}, 工具数={len(tools) if tools else 0}")
+    print(f"[参数] 上下文窗口={context_window}, 消息数={len(messages_with_context)}, 工具数={len(tools) if tools else 0}", flush=True)
 
     _t = time.perf_counter()
     response_stream = await acompletion(**call_kwargs)
-    print(f"[耗时] acompletion 首包耗时: {(time.perf_counter() - _t)*1000:.1f}ms")
-    print(f"[耗时] 前置准备（总计）: {(time.perf_counter() - _stream_start)*1000:.1f}ms")
+    print(f"[耗时] acompletion 首包耗时: {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
+    print(f"[耗时] 前置准备（总计）: {(time.perf_counter() - _stream_start)*1000:.1f}ms", flush=True)
 
     full_content = ""
     full_reasoning = ""
@@ -448,7 +448,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
 
     async for chunk in response_stream:
         if _first_chunk:
-            print(f"[耗时] 首个 content chunk 到达: {(time.perf_counter() - _stream_chunk_start)*1000:.1f}ms")
+            print(f"[耗时] 首个 content chunk 到达: {(time.perf_counter() - _stream_chunk_start)*1000:.1f}ms", flush=True)
             _first_chunk = False
 
         if stream_interrupt_manager.is_interrupted(thread_id):
@@ -509,13 +509,13 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
             await asyncio.sleep(0)
 
     _stream_elapsed = time.perf_counter() - _stream_start
-    print(f"[耗时] 流式传输总耗时: {_stream_elapsed*1000:.1f}ms")
+    print(f"[耗时] 流式传输总耗时: {_stream_elapsed*1000:.1f}ms", flush=True)
     if full_content:
-        print(f"[耗时] 生成文本长度: {len(full_content)} 字符")
+        print(f"[耗时] 生成文本长度: {len(full_content)} 字符", flush=True)
     if full_reasoning:
-        print(f"[耗时] 推理内容长度: {len(full_reasoning)} 字符")
+        print(f"[耗时] 推理内容长度: {len(full_reasoning)} 字符", flush=True)
     if tool_calls_accumulated:
-        print(f"[耗时] 生成工具调用: {len(tool_calls_accumulated)} 个")
+        print(f"[耗时] 生成工具调用: {len(tool_calls_accumulated)} 个", flush=True)
 
     # 保存 assistant 消息到 data
     assistant_msg = {
