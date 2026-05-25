@@ -551,17 +551,23 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
 
 @router.post("/message", summary="发送聊天消息（续接当前活跃路径）")
 async def send_chat_message(request: ChatMessageRequest):
+    _api_start = time.perf_counter()
     thread_id = settings.get_config("thread_id")
     stream_interrupt_manager.create_task(thread_id)
 
     # 确保会话存在
+    _t = time.perf_counter()
     conv = storage.get_conversation(thread_id)
     if conv is None:
         title_raw = request.messages[-1].get("content", "新对话") if request.messages else "新对话"
         title = _extract_content_text(title_raw) if not isinstance(title_raw, str) else title_raw
         storage.create_conversation(thread_id, title=title[:50])
+    _t_db = time.perf_counter() - _t
+    if _t_db > 0.1:
+        print(f"[耗时] send_chat_message - 数据库操作(conv): {_t_db*1000:.1f}ms", flush=True)
 
     # 获取当前活跃叶子作为 parent_id
+    _t = time.perf_counter()
     data = storage.get_data(thread_id)
     parent_id = data.get("active_leaf") or "__root__"
 
@@ -583,13 +589,25 @@ async def send_chat_message(request: ChatMessageRequest):
         data = storage.get_data(thread_id)
         data["active_leaf"] = user_msg["id"]
         storage.save_data(thread_id, data)
+    _t_save = time.perf_counter() - _t
+    if _t_save > 0.1:
+        print(f"[耗时] send_chat_message - 保存用户消息: {_t_save*1000:.1f}ms", flush=True)
+
+    print(f"[耗时] send_chat_message - API handler 总计: {(time.perf_counter() - _api_start)*1000:.1f}ms", flush=True)
 
     async def generate():
+        _gen_start = time.perf_counter()
         try:
             # 获取活跃路径作为 AI 上下文
+            _t = time.perf_counter()
             history = storage.get_active_path(thread_id)
+            _t_path = time.perf_counter() - _t
+            if _t_path > 0.1:
+                print(f"[耗时] generate() - get_active_path: {_t_path*1000:.1f}ms", flush=True)
 
             # 流式 AI 响应，parent_id 为新用户消息的 id
+            _t_before_stream = time.perf_counter() - _gen_start
+            print(f"[耗时] generate() - 到 _stream_ai_response 前: {_t_before_stream*1000:.1f}ms", flush=True)
             async for chunk in _stream_ai_response(thread_id, user_msg["id"], history):
                 yield chunk
         finally:
