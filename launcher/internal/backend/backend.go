@@ -99,7 +99,7 @@ func Start(projectPath, pythonPath string, logger Logger) (*exec.Cmd, error) {
 }
 
 func WaitForHealthy(port int, timeout time.Duration) error {
-	url := fmt.Sprintf("http://127.0.0.1:%d/health", port)
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/config/health", port)
 	client := &http.Client{Timeout: 5 * time.Second}
 	deadline := time.Now().Add(timeout)
 

@@ -51,7 +51,7 @@ function App() {
 
   const { theme } = useTheme();
   const logRef = useRef<HTMLDivElement>(null);
-  const [mainTab, setMainTab] = useState<'main' | 'version' | 'website'>('main');
+  const [mainTab, setMainTab] = useState<'main' | 'version' | 'website' | 'app'>('main');
   const [deployed, setDeployed] = useState<boolean>(false);
   const [preparing, setPreparing] = useState(false);
 
@@ -222,9 +222,15 @@ function App() {
         >
           官网
         </button>
+        <button
+          className={`main-tab ${mainTab === 'app' ? 'active' : ''}`}
+          onClick={() => setMainTab('app')}
+        >
+          青烛
+        </button>
       </div>
 
-      <main className="main" style={mainTab === 'website' ? { padding: 0, gap: 0 } : undefined}>
+      <main className="main" style={mainTab === 'website' || mainTab === 'app' ? { padding: 0, gap: 0 } : undefined}>
         {mainTab === 'main' ? (
           <>
             <div className="toolbar">
@@ -300,11 +306,18 @@ function App() {
           </>
         ) : mainTab === 'version' ? (
           <GitManager />
-        ) : (
+        ) : mainTab === 'website' ? (
           <iframe
             className="website-frame"
             src="https://denghuominghui.top/"
             title="官网"
+            sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+          />
+        ) : (
+          <iframe
+            className="website-frame"
+            src="http://localhost:3000"
+            title="青烛"
             sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
           />
         )}

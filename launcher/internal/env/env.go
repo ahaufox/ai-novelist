@@ -47,6 +47,22 @@ func DetectNode(baseDir string) (string, bool) {
 // FindSystemPython 查找系统中真实安装的 Python 路径
 // 绕过 Windows App Execution Alias（WindowsApps 下的假 python.exe）
 func FindSystemPython() (string, error) {
+	// 0. 优先使用 py.exe 启动器精确查找 Python 3.12（最可靠，不依赖 PATH 优先级）
+	if pyLauncher, err := exec.LookPath("py"); err == nil {
+		cmd := exec.Command(pyLauncher, "-3.12", "-c", "import sys; print(sys.executable)")
+		out, err := cmd.Output()
+		if err == nil {
+			realPyPath := strings.TrimSpace(string(out))
+			if realPyPath != "" {
+				if _, err := os.Stat(realPyPath); err == nil {
+					if _, err := exec.Command(realPyPath, "--version").Output(); err == nil {
+						return realPyPath, nil
+					}
+				}
+			}
+		}
+	}
+
 	// 1. 尝试 exec.LookPath，如果找到的路径不在 WindowsApps 下则直接使用
 	if pyPath, err := exec.LookPath("python"); err == nil {
 		if !isWindowsAppsPath(pyPath) {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"launcher/internal/backend"
 	"launcher/internal/env"
@@ -21,6 +22,7 @@ type Logger interface {
 // LaunchResult 保存启动后的进程信息
 type LaunchResult struct {
 	FrontendCmd *exec.Cmd
+	PythonCmd   *exec.Cmd
 }
 
 // PrepareEnvironment 准备环境：检测 Python 版本、下载 Git/Node/rg 等外部工具链
@@ -162,7 +164,18 @@ func DownloadLaunch(projectPath string, logger Logger) (*LaunchResult, error) {
 	}
 	logger.Logf("=== 后端依赖部署完成 ===")
 
-	logger.Logf("=== 部署前端 ===")
+	logger.Logf("=== 启动 Python 后端 ===")
+	pythonCmd, err := backend.Start(projectPath, pythonPath, logger)
+	if err != nil {
+		return nil, fmt.Errorf("启动 Python 后端失败: %w", err)
+	}
+
+	logger.Logf("=== 等待后端就绪 ===")
+	if err := backend.WaitForHealthy(8000, 60*time.Second); err != nil {
+		return nil, fmt.Errorf("后端健康检查失败: %w", err)
+	}
+
+	logger.Logf("=== 启动前端 ===")
 	if err := frontend.NpmInstall(projectPath, nodePath, logger); err != nil {
 		return nil, err
 	}
@@ -174,5 +187,6 @@ func DownloadLaunch(projectPath string, logger Logger) (*LaunchResult, error) {
 	logger.Logf("=== 启动完成 ===")
 	return &LaunchResult{
 		FrontendCmd: frontendCmd,
+		PythonCmd:   pythonCmd,
 	}, nil
 }

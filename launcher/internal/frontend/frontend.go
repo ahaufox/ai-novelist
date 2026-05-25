@@ -77,7 +77,7 @@ func Start(projectPath, nodePath string, logger Logger) (*exec.Cmd, error) {
 	frontendPath := filepath.Join(projectPath, "frontend")
 
 	npmPath := resolveNpm(nodePath)
-	cmd := exec.Command("cmd", "/c", npmPath, "run", "electron-dev")
+	cmd := exec.Command("cmd", "/c", npmPath, "run", "dev")
 	cmd.Dir = frontendPath
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Env = makeNodeEnv(nodePath)
@@ -100,14 +100,14 @@ func Start(projectPath, nodePath string, logger Logger) (*exec.Cmd, error) {
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
-			logger.Logf("[Electron] %s", scanner.Text())
+			logger.Logf("[Vite] %s", scanner.Text())
 		}
 	}()
 
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			logger.Logf("[Electron ERR] %s", scanner.Text())
+			logger.Logf("[Vite ERR] %s", scanner.Text())
 		}
 	}()
 
