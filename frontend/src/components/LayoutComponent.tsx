@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { PanelGroup, Panel, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
 import { useDispatch, useSelector } from 'react-redux';
 import { addTab, setActiveTab } from '../store/editor';
-import { toggleTerminal } from '../store/terminal';
 import type { RootState, LayoutComponentProps } from '../types';
 import SidebarComponent from './SidebarComponent';
 import ProviderSettingsPanel from './aiprovider/ProviderSettingsPanel';
@@ -20,7 +19,6 @@ import { ThemeSettingsPanel } from './theme';
 
 function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutComponentProps) {
   const dispatch = useDispatch();
-  const isTerminalVisible = useSelector((state: RootState) => state.terminalSlice.isVisible);
   const { isAuthenticated } = useSelector((state: RootState) => state.authSlice);
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
@@ -66,16 +64,15 @@ function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutCompone
   // 监听键盘快捷键
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Ctrl+` 切换终端
+      // Ctrl+` 保留（原为切换终端，终端功能已废弃）
       if (event.ctrlKey && event.key === '`') {
         event.preventDefault();
-        dispatch(toggleTerminal());
       }
     };
     // 添加事件监听回调函数到DOM的window对象上
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [dispatch]);
+  }, []);
 
   // 认证弹窗状态：'login' | 'user' | 'forgot' | null
   const [authModal, setAuthModal] = useState<'login' | 'user' | 'forgot' | null>(null);
@@ -110,8 +107,8 @@ function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutCompone
         leftPanelContent={leftPanelContent}
         onToggleCollapse={handleToggleCollapse}
         onLeftPanelContentChange={handleLeftPanelContentChange}
-        isTerminalVisible={isTerminalVisible}
-        onToggleTerminal={() => dispatch(toggleTerminal())}
+        isTerminalVisible={false}
+        onToggleTerminal={() => {}}
       />
       <div className="h-[97%] flex-grow flex">
         <PanelGroup direction="horizontal" className="flex-grow flex h-full overflow-hidden min-h-0">
