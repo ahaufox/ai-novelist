@@ -373,10 +373,13 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
 
     _t = time.perf_counter()
     tool_dict = await import_tools(mode=_mode)
-    logger.info(f"[耗时] _stream_ai_response - import_tools: {(time.perf_counter() - _t)*1000:.1f}ms")
+    _t_cost = time.perf_counter() - _t
+    logger.info(f"[耗时] _stream_ai_response - import_tools: {_t_cost*1000:.1f}ms, 共 {len(tool_dict)} 个工具")
     tools = None
     if tool_dict:
+        _t_schema = time.perf_counter()
         tools = [_tool_to_openai_schema(t) for t in tool_dict.values()]
+        logger.info(f"[耗时] _stream_ai_response - 转换为 OpenAI schema: {(time.perf_counter() - _t_schema)*1000:.1f}ms")
 
     print(f"[参数] 模式={_mode}, 模型={litellm_model}, temp={_temperature}, top_p={_top_p}, max_tokens={_max_tokens}")
 
@@ -436,8 +439,14 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     full_reasoning = ""
     tool_calls_accumulated: dict[int, dict] = {}
     usage_metadata: dict | None = None
+    _first_chunk = True
+    _stream_chunk_start = time.perf_counter()
 
     async for chunk in response_stream:
+        if _first_chunk:
+            logger.info(f"[耗时] _stream_ai_response - 首个 content chunk 到达: {(time.perf_counter() - _stream_chunk_start)*1000:.1f}ms")
+            _first_chunk = False
+
         if stream_interrupt_manager.is_interrupted(thread_id):
             yield _encode_message({"interrupted": True})
             break
@@ -494,6 +503,15 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
         if chunk_data:
             yield _encode_message(chunk_data)
             await asyncio.sleep(0)
+
+    _stream_elapsed = time.perf_counter() - _stream_start
+    logger.info(f"[耗时] _stream_ai_response - 流式传输总耗时: {_stream_elapsed*1000:.1f}ms")
+    if full_content:
+        logger.info(f"[耗时] _stream_ai_response - 生成文本长度: {len(full_content)} 字符")
+    if full_reasoning:
+        logger.info(f"[耗时] _stream_ai_response - 推理内容长度: {len(full_reasoning)} 字符")
+    if tool_calls_accumulated:
+        logger.info(f"[耗时] _stream_ai_response - 生成工具调用: {len(tool_calls_accumulated)} 个")
 
     # 保存 assistant 消息到 data
     assistant_msg = {

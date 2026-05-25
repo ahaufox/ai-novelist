@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -203,7 +204,7 @@ func (a *App) BackendStart() error {
 	// 等待后端就绪
 	a.Logf("=== 等待后端就绪 ===")
 	if err := backend.WaitForHealthy(8000, 60*time.Second); err != nil {
-		cmd.Process.Kill()
+		killProcessTree(cmd.Process.Pid)
 		return fmt.Errorf("后端健康检查失败: %w", err)
 	}
 
@@ -223,7 +224,7 @@ func (a *App) BackendStop() error {
 
 	pid := a.cmdBackend.Pid
 	a.Logf("正在关闭后端 (PID: %d)...", pid)
-	a.cmdBackend.Kill()
+	killProcessTree(pid)
 	a.cmdBackend = nil
 	a.Logf("后端已关闭")
 	a.emitMainProgramState(false)
@@ -287,7 +288,7 @@ func (a *App) FrontendStop() error {
 
 	pid := a.cmdFrontend.Pid
 	a.Logf("正在关闭前端 (PID: %d)...", pid)
-	a.cmdFrontend.Kill()
+	killProcessTree(pid)
 	a.cmdFrontend = nil
 	a.Logf("前端已关闭")
 	a.emitMainProgramState(false)
@@ -314,6 +315,11 @@ func (a *App) Cleanup() {
 	}
 
 	a.Logf("=== 清理完成 ===")
+}
+
+// killProcessTree 在 Windows 上用 taskkill 杀掉整个进程树
+func killProcessTree(pid int) {
+	exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid)).Run()
 }
 
 func (a *App) IsMainProgramRunning() bool {

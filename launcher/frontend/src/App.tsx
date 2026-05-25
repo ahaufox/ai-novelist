@@ -38,6 +38,7 @@ import WebviewTab from './components/WebviewTab';
 
 function App() {
   const dispatch = useDispatch();
+  const appFrameRef = useRef<HTMLIFrameElement>(null);
   const {
     logs,
     version,
@@ -366,12 +367,29 @@ function App() {
           style={{ display: mainTab === 'website' ? 'block' : 'none' }}
           sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
         />
-        <iframe
-          className="website-frame"
-          src="http://localhost:3000"
-          title="青烛"
-          style={{ display: mainTab === 'app' ? 'block' : 'none' }}
-        />
+        <div className="iframe-container" style={{ display: mainTab === 'app' ? 'block' : 'none' }}>
+          <button
+            className="iframe-refresh-btn"
+            onClick={() => {
+              if (appFrameRef.current) {
+                appFrameRef.current.src = 'http://localhost:3000';
+              }
+            }}
+            title="刷新"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
+          <iframe
+            ref={appFrameRef}
+            className="website-frame"
+            src="http://localhost:3000"
+            title="青烛"
+          />
+        </div>
       </main>
     </div>
   );
