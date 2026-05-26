@@ -15,6 +15,7 @@ import (
 	"launcher/internal/gitman"
 	"launcher/internal/gitservice"
 	"launcher/internal/launcher"
+	"launcher/internal/migration"
 	"launcher/internal/updater"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -168,6 +169,17 @@ func (a *App) BackendStart() error {
 		return fmt.Errorf("项目目录未设置")
 	}
 
+	// 检查项目仓库是否存在
+	if _, err := os.Stat(filepath.Join(projectDir, ".git")); os.IsNotExist(err) {
+		return fmt.Errorf("项目仓库不存在: %s，请先点击「检查更新」下载项目", projectDir)
+	}
+
+	// 运行配置迁移（创建/补全 store.yaml、skills.yaml 等配置文件）
+	a.Logf("=== 检查配置迁移 ===")
+	if err := migration.RunAll(projectDir); err != nil {
+		return fmt.Errorf("配置迁移失败: %w", err)
+	}
+
 	// 检测 Python
 	pythonPath, ok := env.DetectVenvPython(projectDir)
 	if !ok {
@@ -193,6 +205,13 @@ func (a *App) BackendStart() error {
 	if err := backend.PipInstall(projectDir, pythonPath, a); err != nil {
 		return fmt.Errorf("安装后端依赖失败: %w", err)
 	}
+	a.Logf("=== 复制 VC++ 运行时 DLL ===")
+	if err := updater.EnsureVcRedist(projectDir); err != nil {
+		a.Logf("复制 VC++ 运行时 DLL 失败（非致命）: %v", err)
+	} else {
+		a.Logf("VC++ 运行时 DLL 已就绪")
+	}
+	a.Logf("=== 后端依赖部署完成 ===")
 
 	// 启动后端
 	a.Logf("=== 启动 Python 后端 ===")

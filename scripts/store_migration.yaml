@@ -41,7 +41,7 @@ mode:
     - rag_list_files
 autoApproveSettings: false
 selectedProvider: deepseek
-selectedModel: deepseek-chat
+selectedModel: deepseek-v4-flash
 provider:
   builtin:
     name: 内置提供商

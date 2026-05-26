@@ -2,27 +2,15 @@ package launcher
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"time"
 
-	"launcher/internal/backend"
 	"launcher/internal/env"
-	"launcher/internal/frontend"
-	"launcher/internal/migration"
 	"launcher/internal/updater"
 )
 
 type Logger interface {
 	Logf(format string, args ...interface{})
 	Progress(percent int)
-}
-
-// LaunchResult 保存启动后的进程信息
-type LaunchResult struct {
-	FrontendCmd *exec.Cmd
-	PythonCmd   *exec.Cmd
 }
 
 // PrepareEnvironment 准备环境：检测 Python 版本、下载 Git/Node/rg 等外部工具链
@@ -98,95 +86,4 @@ func PrepareEnvironment(projectPath string, logger Logger) error {
 		}
 	}
 	return nil
-}
-
-// DownloadLaunch 下载项目/更新 + pip install + npm install + 启动
-func DownloadLaunch(projectPath string, logger Logger) (*LaunchResult, error) {
-	if !filepath.IsAbs(projectPath) {
-		absPath, err := filepath.Abs(projectPath)
-		if err != nil {
-			return nil, fmt.Errorf("无法解析项目路径: %w", err)
-		}
-		projectPath = absPath
-	}
-
-	baseDir := projectPath
-
-	// 检查项目仓库是否存在
-	if _, err := os.Stat(filepath.Join(projectPath, ".git")); os.IsNotExist(err) {
-		return nil, fmt.Errorf("项目仓库不存在: %s，请先点击「检查更新」下载项目", projectPath)
-	}
-
-	logger.Logf("=== 检查配置迁移 ===")
-	if err := migration.RunAll(projectPath); err != nil {
-		return nil, fmt.Errorf("配置迁移失败: %w", err)
-	}
-
-	// 检测 Python
-	pythonPath, ok := env.DetectVenvPython(baseDir)
-	if !ok {
-		logger.Logf("未找到虚拟环境，检测系统 Python...")
-		check := env.CheckSystemPython()
-		if check.Found && check.Ok {
-			logger.Logf("系统 Python 满足要求: %s, 可以点击 [下载启动] 按钮", check.Version)
-			// 使用 findSystemPython 获取真实路径，绕过 Windows App Execution Alias
-			realPythonPath, err := env.FindSystemPython()
-			if err != nil {
-				return nil, fmt.Errorf("获取系统 Python 真实路径失败: %w", err)
-			}
-			logger.Logf("使用系统 Python: %s", realPythonPath)
-			pythonPath, err = env.EnsureVenv(baseDir, realPythonPath, logger)
-			if err != nil {
-				return nil, fmt.Errorf("创建虚拟环境失败: %w", err)
-			}
-		} else {
-			return nil, fmt.Errorf("Python 环境未就绪，请先点击「准备环境」")
-		}
-	}
-	logger.Logf("使用 Python: %s", pythonPath)
-
-	// 检测 Node.js
-	nodePath, ok := env.DetectNode(baseDir)
-	if !ok {
-		return nil, fmt.Errorf("Node.js 环境未就绪，请先点击「准备环境」")
-	}
-	logger.Logf("使用 Node.js: %s", nodePath)
-
-	logger.Logf("=== 部署后端环境 ===")
-	if err := backend.PipInstall(projectPath, pythonPath, logger); err != nil {
-		return nil, err
-	}
-	logger.Logf("=== 复制 VC++ 运行时 DLL ===")
-	if err := updater.EnsureVcRedist(projectPath); err != nil {
-		logger.Logf("复制 VC++ 运行时 DLL 失败（非致命）: %v", err)
-	} else {
-		logger.Logf("VC++ 运行时 DLL 已就绪")
-	}
-	logger.Logf("=== 后端依赖部署完成 ===")
-
-	logger.Logf("=== 启动 Python 后端 ===")
-	pythonCmd, err := backend.Start(projectPath, pythonPath, logger)
-	if err != nil {
-		return nil, fmt.Errorf("启动 Python 后端失败: %w", err)
-	}
-
-	logger.Logf("=== 等待后端就绪 ===")
-	if err := backend.WaitForHealthy(8000, 60*time.Second); err != nil {
-		return nil, fmt.Errorf("后端健康检查失败: %w", err)
-	}
-
-	logger.Logf("=== 启动前端 ===")
-	if err := frontend.NpmInstall(projectPath, nodePath, logger); err != nil {
-		return nil, err
-	}
-	frontendCmd, err := frontend.Start(projectPath, nodePath, logger)
-	if err != nil {
-		return nil, err
-	}
-
-	logger.Logf("=== 启动完成 ===")
-	return &LaunchResult{
-		FrontendCmd: frontendCmd,
-		PythonCmd:   pythonCmd,
-	}, nil
 }
