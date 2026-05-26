@@ -415,8 +415,15 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
         trimmed_history, _mode, user_input, summaries
     )
     print(f"[耗时] 构建上下文消息: {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
-    logger.info(f"环境信息：{messages_with_context}")
+    
+    _t_log = time.perf_counter()
+    msg_str = f"环境信息：{messages_with_context}"
+    _t_fmt = time.perf_counter()
+    print(f"[耗时] 消息列表 f-string 格式化: {(_t_fmt - _t_log)*1000:.1f}ms, 长度={len(msg_str)}", flush=True)
+    logger.info(msg_str)
+    print(f"[耗时] logger.info 写入: {(time.perf_counter() - _t_fmt)*1000:.1f}ms", flush=True)
 
+    _t = time.perf_counter()
     call_kwargs = {
         "model": litellm_model,
         "messages": messages_with_context,
@@ -431,13 +438,20 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     }
     if tools:
         call_kwargs["tools"] = tools
+    print(f"[耗时] 构建 call_kwargs: {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
 
     print(f"[参数] 上下文窗口={context_window}, 消息数={len(messages_with_context)}, 工具数={len(tools) if tools else 0}", flush=True)
 
+    # 在调用 acompletion 前报告已流逝的时间
+    _t_before_ai = time.perf_counter()
+    _elapsed_to_ai = _t_before_ai - _stream_start
+    print(f"[耗时] 到达 acompletion 调用前: {_elapsed_to_ai*1000:.1f}ms", flush=True)
+
     _t = time.perf_counter()
     response_stream = await acompletion(**call_kwargs)
-    print(f"[耗时] acompletion 首包耗时: {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
-    print(f"[耗时] 前置准备（总计）: {(time.perf_counter() - _stream_start)*1000:.1f}ms", flush=True)
+    _t_after = time.perf_counter()
+    print(f"[耗时] acompletion 首包耗时: {(_t_after - _t)*1000:.1f}ms", flush=True)
+    print(f"[耗时] 前置准备（总计）: {(_t_after - _stream_start)*1000:.1f}ms", flush=True)
 
     full_content = ""
     full_reasoning = ""
