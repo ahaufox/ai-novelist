@@ -338,9 +338,7 @@ def search_emb(collection_name: str, search_input: str, filename_filter: Optiona
         **kwargs
     )
     
-    print(f"检索结果（共 {len(results)} 条）：")
-    for doc, score in results:
-        print(f"* [相似度: {score:.4f}] {doc.page_content} [{doc.metadata}]")
+    print(f"检索结果（共 {len(results)} 条），各文档长度: {[len(doc.page_content) for doc, _ in results]}")
     
     return results
 
@@ -389,9 +387,7 @@ async def asearch_emb(collection_name: str, search_input: str, filename_filter: 
         **kwargs
     )
     
-    print(f"检索结果（共 {len(results)} 条）：")
-    for doc, score in results:
-        print(f"* [相似度: {score:.4f}] {doc.page_content} [{doc.metadata}]")
+    print(f"检索结果（共 {len(results)} 条），各文档长度: {[len(doc.page_content) for doc, _ in results]}")
     
     return results
 

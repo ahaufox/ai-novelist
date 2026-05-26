@@ -231,7 +231,7 @@ async def get_mcp_tools_as_objects(server_id: str | None = None):
                 logger.warning(f"服务器 {server_id} 不存在或未激活")
                 return {}
         
-        logger.info(f"开始获取MCP工具对象，配置: {langchain_config}")
+        logger.info(f"开始获取MCP工具对象，服务器: {list(langchain_config.keys())}")
         
         # 逐个服务器获取工具，以便添加正确的命名空间前缀
         tools_dict = {}

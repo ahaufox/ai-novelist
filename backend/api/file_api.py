@@ -120,7 +120,6 @@ async def api_search_files(query: str):
     """搜索文件内容"""
     results = await search_files_for_user(query)
     logger.info(f"搜索关键词: {query}, 搜索结果数量: {len(results)}")
-    logger.info(f"搜索结果: {results}")
     return results
 
 
