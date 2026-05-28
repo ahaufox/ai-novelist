@@ -407,7 +407,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     context_window = settings.get_config(
         "provider", _selected_provider, "favoriteModels", "chat", _selected_model
     ) or 4096
-    trimmed_history = _trim_history(filtered_history, context_window - _max_tokens)
+    trimmed_history = _trim_history(filtered_history, _max_tokens or context_window)
     print(f"[耗时] 裁剪历史消息: {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
 
     _t = time.perf_counter()
