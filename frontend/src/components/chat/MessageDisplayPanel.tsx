@@ -115,11 +115,28 @@ const MessageDisplayPanel = () => {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const copyMessage = async (content: string, msgId: string) => {
     try {
+      // 优先使用 Clipboard API（现代浏览器/标准环境）
       await navigator.clipboard.writeText(content);
       setCopiedMessageId(msgId);
       setTimeout(() => setCopiedMessageId(null), 2000);
-    } catch (error) {
-      setModal({ show: true, message: '复制失败: ' + (error as Error).toString(), onConfirm: null, onCancel: null });
+    } catch {
+      // 回退方案：Webview/iframe 等受限环境使用 execCommand
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = content;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setCopiedMessageId(msgId);
+        setTimeout(() => setCopiedMessageId(null), 2000);
+      } catch (fallbackError) {
+        setModal({ show: true, message: '复制失败: ' + (fallbackError as Error).toString(), onConfirm: null, onCancel: null });
+      }
     }
   };
 
