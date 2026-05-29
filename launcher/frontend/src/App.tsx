@@ -365,7 +365,8 @@ function App() {
           src="https://denghuominghui.top/"
           title="官网"
           style={{ display: mainTab === 'website' ? 'block' : 'none' }}
-          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-clipboard-write"
+          allow="clipboard-write"
         />
         <div className="iframe-container" style={{ display: mainTab === 'app' ? 'block' : 'none' }}>
           <button
@@ -388,6 +389,7 @@ function App() {
             className="website-frame"
             src="http://localhost:3000"
             title="青烛"
+            allow="clipboard-write"
           />
         </div>
       </main>
