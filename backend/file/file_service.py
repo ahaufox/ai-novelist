@@ -53,7 +53,12 @@ def normalize_to_absolute(file_path: str) -> str:
     # 解析并规范化路径（去除 .. 等）
     return str(resolved.resolve())
 def sort_items(items: List[Dict]) -> List[Dict]:
-    """对项目列表进行自动排序"""
+    """对项目列表进行递归排序（文件夹在前，按名称自然排序）"""
+    # 先递归排序每个文件夹的子项
+    for item in items:
+        if item.get("isFolder") and item.get("children"):
+            item["children"] = sort_items(item["children"])
+
     # 按名称自然顺序排序
     sorted_items = natsorted(items, key=lambda item: item["title"])
     

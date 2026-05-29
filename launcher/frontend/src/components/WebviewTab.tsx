@@ -26,6 +26,7 @@ export default function WebviewTab({ id, title, url }: WebviewTabProps) {
         src={url}
         title={title}
         sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+        allow="clipboard-write"
       />
     </div>
   );

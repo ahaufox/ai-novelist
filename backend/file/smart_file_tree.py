@@ -291,14 +291,19 @@ class SmartFileTreeBuilder:
     
     def _sort_items(self, items: List[Dict]) -> List[Dict]:
         """
-        对项目列表进行排序：文件夹在前，按名称自然排序
-        
+        对项目列表进行递归排序：文件夹在前，按名称自然排序
+
         Args:
             items: 项目列表
-            
+
         Returns:
             排序后的列表
         """
+        # 先递归排序每个文件夹的子项
+        for item in items:
+            if item.get("isFolder") and item.get("children"):
+                item["children"] = self._sort_items(item["children"])
+
         try:
             from natsort import natsorted
             # 按名称自然顺序排序
@@ -306,11 +311,11 @@ class SmartFileTreeBuilder:
         except ImportError:
             # 如果没有 natsort，使用普通排序
             sorted_items = sorted(items, key=lambda item: item["title"])
-        
+
         # 文件夹在前，文件在后
         folders = [item for item in sorted_items if item.get("isFolder", False)]
         files = [item for item in sorted_items if not item.get("isFolder", False)]
-        
+
         return folders + files
 
 
