@@ -10,12 +10,13 @@ import {
 } from '../store/git';
 import {
   GitHistory,
-  GitFullGraph,
   GitBranches,
   GitCheckout,
   GitSwitchBranch,
+  GitStructuredGraph,
 } from '../../wailsjs/go/main/App';
-import { Gitgraph, TemplateName } from '@gitgraph/react';
+import { gitman } from '../../wailsjs/go/models';
+import GitGraphCanvas from './GitGraphCanvas';
 
 interface CommitDetail {
   sha: string;
@@ -46,7 +47,7 @@ export default function GitManager() {
   } = useSelector((state: RootState) => state.gitSlice);
 
   const [activeTab, setActiveTab] = useState<'commits' | 'graph'>('commits');
-  const [graphCommits, setGraphCommits] = useState<CommitDetail[]>([]);
+  const [graphData, setGraphData] = useState<gitman.GraphOutput | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -72,11 +73,9 @@ export default function GitManager() {
   useEffect(() => {
     if (activeTab !== 'graph') return;
     setGraphLoading(true);
-    console.log('[GitManager] 开始加载分支图数据...');
-    GitFullGraph(200)
+    GitStructuredGraph(500)
       .then((data) => {
-        console.log('[GitManager] 分支图数据:', data);
-        setGraphCommits(data || []);
+        setGraphData(data || null);
       })
       .catch((err) => {
         console.error('[GitManager] 加载分支图失败:', err);
@@ -122,22 +121,6 @@ export default function GitManager() {
         </div>
       </div>
 
-      <div className="git-branch-bar">
-        <span className="git-label">当前分支:</span>
-        <select
-          className="git-select"
-          value={currentBranch}
-          onChange={(e) => handleSwitchBranch(e.target.value)}
-          disabled={checkoutLoading}
-        >
-          {localBranches.map((b: BranchInfo) => (
-            <option key={b.name} value={b.name}>
-              {b.name} {b.is_current ? '(当前)' : ''}
-            </option>
-          ))}
-        </select>
-      </div>
-
       <div className="git-tabs">
         <button
           className={`git-tab ${activeTab === 'commits' ? 'active' : ''}`}
@@ -155,113 +138,75 @@ export default function GitManager() {
 
       <div className="git-content">
         {activeTab === 'commits' ? (
-          <div className="git-commits">
-            {commits.length === 0 && !loading && (
-              <div className="git-empty">暂无提交记录（可能是浅克隆仓库，只保留了最新提交）</div>
-            )}
-            {commits.map((c: CommitDetail) => (
-              <div
-                key={c.sha}
-                className={`git-commit-item ${selectedCommit?.sha === c.sha ? 'selected' : ''} ${c.is_head ? 'head' : ''}`}
-                onClick={() => dispatch(setSelectedCommit(c))}
+          <>
+            <div className="git-branch-bar">
+              <span className="git-label">当前分支:</span>
+              <select
+                className="git-select"
+                value={currentBranch}
+                onChange={(e) => handleSwitchBranch(e.target.value)}
+                disabled={checkoutLoading}
               >
-                <div className="git-commit-top">
-                  <span className="git-commit-sha">{c.sha.slice(0, 7)}</span>
-                  <span className="git-commit-date">{formatDate(c.date)}</span>
-                  {c.is_head && <span className="git-commit-head-badge">HEAD</span>}
+                {localBranches.map((b: BranchInfo) => (
+                  <option key={b.name} value={b.name}>
+                    {b.name} {b.is_current ? '(当前)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="git-commits">
+              {commits.length === 0 && !loading && (
+                <div className="git-empty">暂无提交记录（可能是浅克隆仓库，只保留了最新提交）</div>
+              )}
+              {commits.map((c: CommitDetail) => (
+                <div
+                  key={c.sha}
+                  className={`git-commit-item ${selectedCommit?.sha === c.sha ? 'selected' : ''} ${c.is_head ? 'head' : ''}`}
+                  onClick={() => dispatch(setSelectedCommit(c))}
+                >
+                  <div className="git-commit-top">
+                    <span className="git-commit-sha">{c.sha.slice(0, 7)}</span>
+                    <span className="git-commit-date">{formatDate(c.date)}</span>
+                    {c.is_head && <span className="git-commit-head-badge">HEAD</span>}
+                  </div>
+                  <div className="git-commit-msg">{c.message}</div>
+                  <div className="git-commit-author">{c.author}</div>
                 </div>
-                <div className="git-commit-msg">{c.message}</div>
-                <div className="git-commit-author">{c.author}</div>
+              ))}
+            </div>
+
+            {selectedCommit && (
+              <div className="git-commit-action-bar">
+                <span className="git-selected-info">
+                  选中: <code>{selectedCommit.sha.slice(0, 7)}</code> {selectedCommit.message.split('\n')[0]}
+                </span>
+                <div className="git-action-btns">
+                  <button
+                    className="btn warn"
+                    onClick={handleCheckout}
+                    disabled={checkoutLoading || selectedCommit.is_head}
+                  >
+                    {selectedCommit.is_head ? '当前版本' : checkoutLoading ? '切换中...' : '切换到该版本'}
+                  </button>
+                </div>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         ) : (
           <div className="git-graph-panel">
             {graphLoading ? (
               <div className="git-empty">加载分支图中...</div>
+            ) : !graphData ? (
+              <div className="git-empty">暂无分支图数据</div>
             ) : (
-              <GitGraphView commits={graphCommits} />
+              <GitGraphCanvas data={graphData} />
             )}
           </div>
         )}
       </div>
-
-      {selectedCommit && (
-        <div className="git-commit-action-bar">
-          <span className="git-selected-info">
-            选中: <code>{selectedCommit.sha.slice(0, 7)}</code> {selectedCommit.message.split('\n')[0]}
-          </span>
-          <div className="git-action-btns">
-            <button
-              className="btn warn"
-              onClick={handleCheckout}
-              disabled={checkoutLoading || selectedCommit.is_head}
-            >
-              {selectedCommit.is_head ? '当前版本' : checkoutLoading ? '切换中...' : '切换到该版本'}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
-}
-
-// 使用 @gitgraph/react 渲染分支图
-function GitGraphView({ commits }: { commits: CommitDetail[] }) {
-  if (commits.length === 0) {
-    return <div className="git-empty">暂无数据</div>;
-  }
-
-  // @gitgraph/core 的 import 格式：需要 git2json 格式
-  // 参考：https://github.com/nicoespeon/gitgraph.js/blob/master/packages/gitgraph-core/src/user-api/gitgraph-user-api.ts
-  // author 必须是 object { name, email } 类型
-  const data = [...commits].reverse().map((c) => ({
-    hash: c.sha,
-    parents: c.parents || [],
-    subject: c.message.split('\n')[0],
-    author: {
-      name: c.author || 'Unknown',
-      email: ''
-    },
-    authorDate: c.date,
-    refs: c.refs || [],
-  }));
-
-  // 调试日志
-  console.log('[GitGraphView] 渲染数据:', data);
-
-  try {
-    return (
-      <Gitgraph options={{
-        template: TemplateName.Metro,
-        orientation: 'vertical-reverse'
-      }}>
-        {(gitgraph: any) => {
-          try {
-            if (gitgraph && typeof gitgraph.import === 'function') {
-              gitgraph.import(data);
-              console.log('[GitGraphView] import 成功');
-            } else {
-              console.error('[GitGraphView] gitgraph 对象无效或缺少 import 方法:', gitgraph);
-            }
-          } catch (err) {
-            console.error('[GitGraphView] import 失败:', err);
-          }
-          return null;
-        }}
-      </Gitgraph>
-    );
-  } catch (err) {
-    console.error('[GitGraphView] 渲染失败:', err);
-    return (
-      <div className="git-empty" style={{ color: 'red' }}>
-        分支图渲染失败，请查看控制台错误日志
-        <pre style={{ fontSize: '10px', marginTop: '10px' }}>
-          {err instanceof Error ? err.message : String(err)}
-        </pre>
-      </div>
-    );
-  }
 }
 
 function formatDate(iso: string): string {

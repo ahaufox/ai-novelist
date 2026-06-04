@@ -60,7 +60,7 @@ class Settings:
         self.PORT: int = self.get_config("port", default=8000)
     
     def _get_executable(self, exe_name: str) -> str:
-        """获取项目自带的可执行文件路径，如果不存在则使用系统命令
+        """获取工具目录中的可执行文件路径，如果不存在则使用系统命令
         
         Args:
             exe_name: 可执行文件名（如 'uv.exe' 或 'node.exe'）
@@ -68,20 +68,20 @@ class Settings:
         Returns:
             str: 可执行文件的完整路径或系统命令名
         """
-        bin_dir = get_bin_dir()
-        # Node.js 解压到 bin/node/ 子目录下
+        tools_dir = get_bin_dir()
+        # Node.js 在 tools/node/ 子目录下
         if exe_name in ('node.exe', 'npm.cmd', 'npx.cmd'):
-            exe_path = bin_dir / 'node' / exe_name
+            exe_path = tools_dir / 'node' / exe_name
             if exe_path.exists():
                 logger.info(f"使用项目自带的 {exe_name}: {exe_path}")
                 return str(exe_path)
-        # Git 解压到 bin/git/bin/ 子目录下
+        # Git 在 tools/git/bin/ 子目录下
         if exe_name == 'git.exe':
-            exe_path = bin_dir / 'git' / 'bin' / exe_name
+            exe_path = tools_dir / 'git' / 'bin' / exe_name
             if exe_path.exists():
                 logger.info(f"使用项目自带的 {exe_name}: {exe_path}")
                 return str(exe_path)
-        exe_path = bin_dir / exe_name
+        exe_path = tools_dir / exe_name
         if exe_path.exists():
             logger.info(f"使用项目自带的 {exe_name}: {exe_path}")
             return str(exe_path)

@@ -134,6 +134,10 @@ func (a *App) CheckUpdate() (*updater.UpdateStatus, error) {
 	if a.config == nil {
 		return nil, fmt.Errorf("配置未加载")
 	}
+	// 先确保 git 已安装
+	if err := updater.EnsureGit(a); err != nil {
+		return nil, fmt.Errorf("准备 Git 失败: %w", err)
+	}
 	updater.SyncBranchesFromRemote(a.config, a)
 	return updater.CheckUpdateStatus(a.config, a)
 }
@@ -141,6 +145,10 @@ func (a *App) CheckUpdate() (*updater.UpdateStatus, error) {
 func (a *App) PerformUpdate() error {
 	if a.config == nil {
 		return fmt.Errorf("配置未加载")
+	}
+	// 先确保 git 已安装
+	if err := updater.EnsureGit(a); err != nil {
+		return fmt.Errorf("准备 Git 失败: %w", err)
 	}
 	return updater.PullUpdates(a.config, a)
 }
@@ -385,7 +393,7 @@ func (a *App) Progress(percent int) {
 func (a *App) AutoCheckUpdate() {
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		a.Logf("=== %s 启动器 ===", a.config.App.Name)
+		a.Logf("=== 青烛 启动器 ===")
 
 		_, err := updater.CheckUpdateStatus(a.config, a)
 		if err != nil {
@@ -424,6 +432,23 @@ func (a *App) GitSwitchBranch(name string) error {
 func (a *App) GitCreateBranch(name string) error {
 	projectDir := a.getProjectDir()
 	return gitman.CreateBranch(projectDir, name)
+}
+
+func (a *App) GitGraphOutput(maxCount int) ([]gitman.GraphLine, error) {
+	projectDir := a.getProjectDir()
+	return gitman.GetGraphOutput(projectDir, maxCount)
+}
+
+// GitStructuredGraph 返回结构化的分支图数据（替换 GitGraphOutput）
+// Go 端完成所有解析和颜色分配，前端纯渲染
+func (a *App) GitStructuredGraph(maxCount int) (*gitman.GraphOutput, error) {
+	projectDir := a.getProjectDir()
+	return gitman.GetStructuredGraph(projectDir, maxCount)
+}
+
+func (a *App) GitAllCommits(maxCount int) ([]gitman.CommitDetail, error) {
+	projectDir := a.getProjectDir()
+	return gitman.GetAllCommitDetails(projectDir, maxCount)
 }
 
 // OpenWebviewTab 打开一个 Webview 标签页，显示指定 URL

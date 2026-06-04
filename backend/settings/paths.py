@@ -19,14 +19,11 @@ def get_data_dir():
 
 
 def get_bin_dir():
-    """获取可执行文件目录路径"""
-    if getattr(sys, 'frozen', False):
-        # 文件夹模式：bin 在 _internal 目录下
-        exe_dir = Path(sys.executable).parent
-        return exe_dir / '_internal' / 'bin'
-    else:
-        # 开发环境，bin 在项目根目录
-        return Path(__file__).parent.parent.parent / 'bin'
+    """获取可执行文件目录路径（由启动器通过环境变量 AI_NOVELIST_TOOLS_DIR 传入）"""
+    tools_dir = os.environ.get("AI_NOVELIST_TOOLS_DIR")
+    if tools_dir:
+        return Path(tools_dir)
+    raise RuntimeError("环境变量 AI_NOVELIST_TOOLS_DIR 未设置，请通过启动器运行项目")
 
 
 def get_env_file_path() -> Path:

@@ -3,6 +3,7 @@ package backend
 import (
 	"bufio"
 	"fmt"
+	"launcher/internal/env"
 	"launcher/internal/updater"
 	"net/http"
 	"os"
@@ -62,9 +63,11 @@ func Start(projectPath, pythonPath string, logger Logger) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("main.py 不存在: %s", mainPy)
 	}
 
+	toolsDir := env.GetToolsDir()
 	cmd := exec.Command(pythonPath, mainPy)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Dir = projectPath
+	cmd.Env = append(os.Environ(), "AI_NOVELIST_TOOLS_DIR="+toolsDir)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

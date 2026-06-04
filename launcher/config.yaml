@@ -1,9 +1,0 @@
-app:
-  name: "青烛"
-  main_executable: "electron.exe"
-
-git:
-  remote_url: "https://denghuominghui.top/api/git/repo.git"
-  project_dir: "qingzhu"
-
-mirror: "tsinghua"

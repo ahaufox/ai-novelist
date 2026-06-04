@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import './App.css';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from './store/store';
@@ -54,11 +54,51 @@ function App() {
 
   const { theme } = useTheme();
   const logRef = useRef<HTMLDivElement>(null);
-  const [mainTab, setMainTab] = useState<'main' | 'version' | 'website' | 'app'>('main');
+  const [mainTab, setMainTab] = useState<'main' | 'version' | 'website' | 'app'>('website');
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const appTabReadyRef = useRef(false);
   const [deployed, setDeployed] = useState<boolean>(false);
   const [preparing, setPreparing] = useState(false);
   const [backendLoading, setBackendLoading] = useState(false);
   const [frontendLoading, setFrontendLoading] = useState(false);
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current !== null) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
+
+  // 刷新 iframe
+  const refreshIframe = useCallback(() => {
+    if (appFrameRef.current) {
+      appFrameRef.current.src = 'http://localhost:3000';
+    }
+  }, []);
+
+  // 打开"青烛"标签页：检查前后端状态，决定显示内容
+  const handleAppTabClick = useCallback(async () => {
+    setMainTab('app');
+    stopPolling();
+
+    // 查询最新状态
+    const beRunning = await BackendRunning();
+    const feRunning = await FrontendRunning();
+    dispatch(setBackendRunning(beRunning));
+    dispatch(setFrontendRunning(feRunning));
+
+    if (beRunning && feRunning) {
+      if (!appTabReadyRef.current) {
+        // 首次加载 → 刷新 iframe
+        appTabReadyRef.current = true;
+        refreshIframe();
+      }
+      // 非首次（切换标签回来）→ 不自动刷新，保留已有内容
+    } else {
+      // 服务未就绪 → 重置标记，下次就绪时重新加载
+      appTabReadyRef.current = false;
+    }
+  }, [dispatch, stopPolling, refreshIframe]);
 
   const refreshStatus = async () => {
     try {
@@ -115,6 +155,13 @@ function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 清理轮询定时器
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, [stopPolling]);
 
   useEffect(() => {
     if (logRef.current) {
@@ -256,26 +303,26 @@ function App() {
     <div className="app" style={{ background: theme.black, color: theme.white }}>
       <div className="main-tab-bar">
         <button
-          className={`main-tab ${mainTab === 'main' ? 'active' : ''}`}
-          onClick={() => setMainTab('main')}
-        >
-          主界面
-        </button>
-        <button
-          className={`main-tab ${mainTab === 'version' ? 'active' : ''}`}
-          onClick={() => setMainTab('version')}
-        >
-          版本管理
-        </button>
-        <button
           className={`main-tab ${mainTab === 'website' ? 'active' : ''}`}
           onClick={() => setMainTab('website')}
         >
           官网
         </button>
         <button
+          className={`main-tab ${mainTab === 'main' ? 'active' : ''}`}
+          onClick={() => setMainTab('main')}
+        >
+          启动
+        </button>
+        <button
+          className={`main-tab ${mainTab === 'version' ? 'active' : ''}`}
+          onClick={() => setMainTab('version')}
+        >
+          版本
+        </button>
+        <button
           className={`main-tab ${mainTab === 'app' ? 'active' : ''}`}
-          onClick={() => setMainTab('app')}
+          onClick={handleAppTabClick}
         >
           青烛
         </button>
@@ -365,29 +412,43 @@ function App() {
           src="https://denghuominghui.top/"
           title="官网"
           style={{ display: mainTab === 'website' ? 'block' : 'none' }}
-          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-top-navigation-by-user-activation allow-popups-to-escape-sandbox"
         />
         <div className="iframe-container" style={{ display: mainTab === 'app' ? 'block' : 'none' }}>
-          <button
-            className="iframe-refresh-btn"
-            onClick={() => {
-              if (appFrameRef.current) {
-                appFrameRef.current.src = 'http://localhost:3000';
-              }
-            }}
-            title="刷新"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-            </svg>
-          </button>
+          {/* 状态面板覆盖层 - 服务未就绪时遮挡 iframe */}
+          {(!backendRunning || !frontendRunning) && (
+            <div className="app-status-panel">
+              <div className="app-status-icon app-status-icon-error">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="15" y1="9" x2="9" y2="15" />
+                  <line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+              </div>
+              <div className="app-status-title">服务未就绪</div>
+              <div className="app-status-desc">
+                请前往「<span className="app-status-link" onClick={() => setMainTab('main')}>启动</span>」页面启动全部服务后重试。
+              </div>
+              <div className="app-status-detail">
+                <div className="app-status-item">
+                  <span className={`app-status-dot ${backendRunning ? 'dot-green' : 'dot-red'}`} />
+                  <span>后端服务：{backendRunning ? '运行中' : '未启动'}</span>
+                </div>
+                <div className="app-status-item">
+                  <span className={`app-status-dot ${frontendRunning ? 'dot-green' : 'dot-red'}`} />
+                  <span>前端服务：{frontendRunning ? '运行中' : '未启动'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* iframe 始终渲染，不销毁重建；服务未就绪时被状态面板遮挡 */}
           <iframe
             ref={appFrameRef}
             className="website-frame"
             src="http://localhost:3000"
             title="青烛"
+            style={{ display: (backendRunning && frontendRunning) ? 'block' : 'none' }}
           />
         </div>
       </main>

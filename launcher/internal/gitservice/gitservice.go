@@ -5,11 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/go-git/go-git/v6"
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/object"
+	"launcher/internal/gitutil"
 )
 
 // GitService 提供Git操作服务
@@ -25,14 +22,6 @@ func NewGitService(projectDir string) *GitService {
 // SetProjectDir 设置项目目录
 func (s *GitService) SetProjectDir(projectDir string) {
 	s.projectDir = projectDir
-}
-
-// openRepo 打开仓库
-func (s *GitService) openRepo() (*git.Repository, error) {
-	if s.projectDir == "" {
-		return nil, fmt.Errorf("项目目录未设置")
-	}
-	return git.PlainOpen(s.projectDir)
 }
 
 // StatusResponse Git状态响应
@@ -52,60 +41,57 @@ type Change struct {
 
 // GetStatus 获取Git状态
 func (s *GitService) GetStatus() (*StatusResponse, error) {
-	repo, err := s.openRepo()
-	if err != nil {
-		return nil, fmt.Errorf("打开仓库失败: %w", err)
+	if s.projectDir == "" {
+		return nil, fmt.Errorf("项目目录未设置")
 	}
 
 	// 获取当前分支
-	head, err := repo.Head()
+	branch, err := gitutil.OutputIn(s.projectDir, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
-		return nil, fmt.Errorf("获取HEAD失败: %w", err)
+		return nil, fmt.Errorf("获取分支失败: %w", err)
 	}
-	branch := head.Name().Short()
+	branch = strings.TrimSpace(branch)
 
-	// 获取工作区状态
-	w, err := repo.Worktree()
-	if err != nil {
-		return nil, fmt.Errorf("获取工作区失败: %w", err)
-	}
-
-	status, err := w.Status()
+	// 获取状态 (porcelain 格式)
+	statusOut, err := gitutil.OutputIn(s.projectDir, "status", "--porcelain")
 	if err != nil {
 		return nil, fmt.Errorf("获取状态失败: %w", err)
 	}
 
-	// 获取未跟踪文件
 	var untrackedFiles []string
 	var changes []Change
 	var modifiedFiles []string
+	dirty := false
 
-	for file, fileStatus := range status {
-		if fileStatus.Staging == git.Untracked && fileStatus.Worktree == git.Untracked {
-			untrackedFiles = append(untrackedFiles, file)
-		} else {
-			// 有更改的文件
-			changeType := "M"
-			if fileStatus.Staging == git.Added || fileStatus.Worktree == git.Added {
-				changeType = "A"
-			} else if fileStatus.Staging == git.Deleted || fileStatus.Worktree == git.Deleted {
-				changeType = "D"
+	if statusOut != "" {
+		dirty = true
+		for _, line := range strings.Split(statusOut, "\n") {
+			line = strings.TrimRight(line, "\r")
+			if len(line) < 4 {
+				continue
 			}
+			xy := line[:2]
+			path := strings.TrimSpace(line[3:])
 
-			// 标准化路径
-			filePath := strings.TrimPrefix(file, "./")
-
-			changes = append(changes, Change{
-				Path:       filePath,
-				ChangeType: changeType,
-			})
-			modifiedFiles = append(modifiedFiles, filePath)
+			switch {
+			case xy == "??":
+				untrackedFiles = append(untrackedFiles, path)
+			case xy[0] == 'A' || xy[1] == 'A':
+				changes = append(changes, Change{Path: path, ChangeType: "A"})
+				modifiedFiles = append(modifiedFiles, path)
+			case xy[0] == 'D' || xy[1] == 'D':
+				changes = append(changes, Change{Path: path, ChangeType: "D"})
+				modifiedFiles = append(modifiedFiles, path)
+			default:
+				changes = append(changes, Change{Path: path, ChangeType: "M"})
+				modifiedFiles = append(modifiedFiles, path)
+			}
 		}
 	}
 
 	return &StatusResponse{
 		Branch:         branch,
-		Dirty:          !status.IsClean(),
+		Dirty:          dirty,
 		UntrackedFiles: untrackedFiles,
 		Changes:        changes,
 		ModifiedFiles:  modifiedFiles,
@@ -121,29 +107,40 @@ type CheckpointInfo struct {
 
 // ListCheckpoints 列出所有检查点
 func (s *GitService) ListCheckpoints() ([]CheckpointInfo, error) {
-	repo, err := s.openRepo()
-	if err != nil {
-		return nil, fmt.Errorf("打开仓库失败: %w", err)
+	if s.projectDir == "" {
+		return nil, fmt.Errorf("项目目录未设置")
 	}
 
-	iter, err := repo.Log(&git.LogOptions{})
+	out, err := gitutil.OutputIn(s.projectDir, "log", "--all", "--format=%H|%s", "--max-count=100")
 	if err != nil {
 		return nil, fmt.Errorf("获取日志失败: %w", err)
 	}
-	defer iter.Close()
 
 	var checkpoints []CheckpointInfo
-	for {
-		commit, err := iter.Next()
-		if err != nil {
-			break
-		}
+	if out != "" {
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			parts := strings.SplitN(line, "|", 2)
+			hash := parts[0]
+			msg := ""
+			if len(parts) >= 2 {
+				msg = strings.TrimSpace(parts[1])
+			}
 
-		checkpoints = append(checkpoints, CheckpointInfo{
-			CommitHash: commit.Hash.String(),
-			ShortHash:  commit.Hash.String()[:8],
-			Message:    strings.TrimSpace(commit.Message),
-		})
+			shortHash := hash
+			if len(hash) > 8 {
+				shortHash = hash[:8]
+			}
+
+			checkpoints = append(checkpoints, CheckpointInfo{
+				CommitHash: hash,
+				ShortHash:  shortHash,
+				Message:    msg,
+			})
+		}
 	}
 
 	return checkpoints, nil
@@ -164,29 +161,21 @@ type SaveCheckpointResponse struct {
 
 // SaveCheckpoint 保存检查点
 func (s *GitService) SaveCheckpoint(req *SaveCheckpointRequest) (*SaveCheckpointResponse, error) {
-	repo, err := s.openRepo()
-	if err != nil {
-		return nil, fmt.Errorf("打开仓库失败: %w", err)
+	if s.projectDir == "" {
+		return nil, fmt.Errorf("项目目录未设置")
 	}
 
-	w, err := repo.Worktree()
-	if err != nil {
-		return nil, fmt.Errorf("获取工作区失败: %w", err)
-	}
-
-	// 添加所有文件（包括未跟踪的文件）
-	err = w.AddWithOptions(&git.AddOptions{All: true})
-	if err != nil {
+	// git add -A
+	if err := gitutil.RunIn(s.projectDir, "add", "-A"); err != nil {
 		return nil, fmt.Errorf("添加文件失败: %w", err)
 	}
 
-	// 获取状态检查是否有更改
-	status, err := w.Status()
+	// 检查是否有更改
+	statusOut, err := gitutil.OutputIn(s.projectDir, "status", "--porcelain")
 	if err != nil {
 		return nil, fmt.Errorf("获取状态失败: %w", err)
 	}
-
-	if status.IsClean() {
+	if strings.TrimSpace(statusOut) == "" {
 		return &SaveCheckpointResponse{
 			Success: false,
 			Message: "没有更改需要提交",
@@ -196,20 +185,32 @@ func (s *GitService) SaveCheckpoint(req *SaveCheckpointRequest) (*SaveCheckpoint
 	// 生成提交消息
 	message := req.Message
 	if message == "" {
-		timestamp := time.Now().Format("2006-01-02 15:04:05")
+		timestamp := timeNow()
 		message = fmt.Sprintf("Checkpoint: %s", timestamp)
 	}
 
-	// 创建提交
-	commit, err := w.Commit(message, &git.CommitOptions{})
+	// git commit -m <message>
+	out, err := gitutil.CombinedOutputIn(s.projectDir, "commit", "-m", message)
 	if err != nil {
-		return nil, fmt.Errorf("创建提交失败: %w", err)
+		return nil, fmt.Errorf("创建提交失败: %w\n%s", err, out)
+	}
+
+	// 获取 commit hash
+	hash, err := gitutil.OutputIn(s.projectDir, "rev-parse", "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("获取 commit hash 失败: %w", err)
+	}
+	hash = strings.TrimSpace(hash)
+
+	shortHash := hash
+	if len(hash) > 8 {
+		shortHash = hash[:8]
 	}
 
 	return &SaveCheckpointResponse{
 		Success:    true,
-		CommitHash: commit.String(),
-		ShortHash:  commit.String()[:8],
+		CommitHash: hash,
+		ShortHash:  shortHash,
 		Message:    message,
 	}, nil
 }
@@ -229,46 +230,40 @@ type RestoreCheckpointResponse struct {
 
 // RestoreCheckpoint 恢复检查点
 func (s *GitService) RestoreCheckpoint(req *RestoreCheckpointRequest) (*RestoreCheckpointResponse, error) {
-	repo, err := s.openRepo()
-	if err != nil {
-		return nil, fmt.Errorf("打开仓库失败: %w", err)
+	if s.projectDir == "" {
+		return nil, fmt.Errorf("项目目录未设置")
 	}
-
-	w, err := repo.Worktree()
-	if err != nil {
-		return nil, fmt.Errorf("获取工作区失败: %w", err)
-	}
-
-	hash := plumbing.NewHash(req.CommitHash)
 
 	// 获取提交信息
-	commit, err := repo.CommitObject(hash)
+	info, err := gitutil.OutputIn(s.projectDir, "log", "-1", "--format=%H|%s", req.CommitHash)
 	if err != nil {
 		return nil, fmt.Errorf("获取提交失败: %w", err)
 	}
+	parts := strings.SplitN(info, "|", 2)
+	hash := parts[0]
+	msg := ""
+	if len(parts) >= 2 {
+		msg = strings.TrimSpace(parts[1])
+	}
 
-	// 硬重置到指定提交
-	err = w.Reset(&git.ResetOptions{
-		Mode:   git.HardReset,
-		Commit: hash,
-	})
-	if err != nil {
+	// git reset --hard
+	if err := gitutil.RunIn(s.projectDir, "reset", "--hard", req.CommitHash); err != nil {
 		return nil, fmt.Errorf("重置失败: %w", err)
 	}
 
 	// 清理未跟踪的文件
-	err = w.Clean(&git.CleanOptions{
-		Dir: true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("清理未跟踪文件失败: %w", err)
+	_ = gitutil.RunIn(s.projectDir, "clean", "-fd")
+
+	shortHash := hash
+	if len(hash) > 8 {
+		shortHash = hash[:8]
 	}
 
 	return &RestoreCheckpointResponse{
 		Success:    true,
-		CommitHash: commit.Hash.String(),
-		ShortHash:  commit.Hash.String()[:8],
-		Message:    strings.TrimSpace(commit.Message),
+		CommitHash: hash,
+		ShortHash:  shortHash,
+		Message:    msg,
 	}, nil
 }
 
@@ -292,126 +287,75 @@ type DiffResponse struct {
 
 // GetCheckpointDiff 获取检查点差异
 func (s *GitService) GetCheckpointDiff(commitHash string) (*DiffResponse, error) {
-	repo, err := s.openRepo()
-	if err != nil {
-		return nil, fmt.Errorf("打开仓库失败: %w", err)
+	if s.projectDir == "" {
+		return nil, fmt.Errorf("项目目录未设置")
 	}
 
-	hash := plumbing.NewHash(commitHash)
-	commit, err := repo.CommitObject(hash)
+	// 检查是否为初始提交（没有父提交）
+	parentCount, err := gitutil.OutputIn(s.projectDir, "rev-list", "--parents", "--max-count=1", commitHash)
 	if err != nil {
-		return nil, fmt.Errorf("获取提交失败: %w", err)
+		return nil, fmt.Errorf("获取提交信息失败: %w", err)
 	}
-
-	// 获取父提交
-	parentIter := commit.Parents()
-	parentCommit, err := parentIter.Next()
-	if err != nil {
-		// 初始提交，返回空差异
+	// rev-list --parents 输出: "hash parent1 parent2..."
+	parentParts := strings.Fields(strings.TrimSpace(parentCount))
+	if len(parentParts) <= 1 {
+		// 初始提交
 		return &DiffResponse{
 			Success:         true,
 			CommitHash:      commitHash,
-			ShortHash:       commitHash[:8],
+			ShortHash:       truncateHash(commitHash),
 			Changes:         []FileChange{},
 			IsInitialCommit: true,
 		}, nil
 	}
 
-	// 获取差异
-	changes, err := parentCommit.Stats()
+	// 获取差异文件列表
+	diffOut, err := gitutil.OutputIn(s.projectDir, "diff", "--name-status", fmt.Sprintf("%s^..%s", commitHash, commitHash))
 	if err != nil {
-		return nil, fmt.Errorf("获取差异统计失败: %w", err)
-	}
-
-	// 获取详细的diff内容
-	patch, err := parentCommit.Patch(commit)
-	if err != nil {
-		return nil, fmt.Errorf("获取patch失败: %w", err)
+		return nil, fmt.Errorf("获取差异列表失败: %w", err)
 	}
 
 	var fileChanges []FileChange
-	seenPaths := make(map[string]bool)
+	if diffOut != "" {
+		for _, line := range strings.Split(diffOut, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			parts := strings.Fields(line)
+			if len(parts) < 2 {
+				continue
+			}
+			changeType := parts[0]
+			filePath := strings.TrimPrefix(parts[1], "./")
 
-	for _, filePatch := range patch.FilePatches() {
-		if filePatch.IsBinary() {
-			continue
-		}
+			change := FileChange{
+				Path:       filePath,
+				ChangeType: changeType,
+			}
 
-		from, to := filePatch.Files()
-		var filePath string
-		var changeType string
-
-		if from == nil {
-			// 新增文件
-			filePath = to.Path()
-			changeType = "A"
-		} else if to == nil {
-			// 删除文件
-			filePath = from.Path()
-			changeType = "D"
-		} else {
-			// 修改文件
-			filePath = to.Path()
-			changeType = "M"
-		}
-
-		// 标准化路径
-		filePath = strings.TrimPrefix(filePath, "./")
-
-		// 去重
-		if seenPaths[filePath] {
-			continue
-		}
-		seenPaths[filePath] = true
-
-		// 获取文件内容
-		change := FileChange{
-			Path:       filePath,
-			ChangeType: changeType,
-		}
-
-		// 获取旧内容（父提交中的版本）
-		if changeType == "M" || changeType == "D" {
-			if fromFile, err := parentCommit.File(filePath); err == nil {
-				if content, err := fromFile.Contents(); err == nil {
+			// 获取文件内容
+			if changeType == "M" || changeType == "D" {
+				if content, err := gitutil.OutputIn(s.projectDir, "show", fmt.Sprintf("%s^:%s", commitHash, filePath)); err == nil {
 					change.OldContent = content
 				}
 			}
-		}
-
-		// 获取新内容（当前提交中的版本）
-		if changeType == "M" || changeType == "A" {
-			if toFile, err := commit.File(filePath); err == nil {
-				if content, err := toFile.Contents(); err == nil {
+			if changeType == "M" || changeType == "A" {
+				if content, err := gitutil.OutputIn(s.projectDir, "show", fmt.Sprintf("%s:%s", commitHash, filePath)); err == nil {
 					change.NewContent = content
 				}
 			}
-		}
 
-		fileChanges = append(fileChanges, change)
-	}
-
-	// 如果没有详细patch，使用stats
-	if len(fileChanges) == 0 && len(changes) > 0 {
-		for _, change := range changes {
-			filePath := strings.TrimPrefix(change.Name, "./")
-
-			if seenPaths[filePath] {
-				continue
-			}
-			seenPaths[filePath] = true
-
-			fileChanges = append(fileChanges, FileChange{
-				Path:       filePath,
-				ChangeType: "M",
-			})
+			fileChanges = append(fileChanges, change)
 		}
 	}
+
+	shortHash := truncateHash(commitHash)
 
 	return &DiffResponse{
 		Success:    true,
 		CommitHash: commitHash,
-		ShortHash:  commitHash[:8],
+		ShortHash:  shortHash,
 		Changes:    fileChanges,
 	}, nil
 }
@@ -427,9 +371,8 @@ type WorkingDiffResponse struct {
 
 // GetWorkingDiff 获取工作区差异
 func (s *GitService) GetWorkingDiff(filePath string) (*WorkingDiffResponse, error) {
-	repo, err := s.openRepo()
-	if err != nil {
-		return nil, fmt.Errorf("打开仓库失败: %w", err)
+	if s.projectDir == "" {
+		return nil, fmt.Errorf("项目目录未设置")
 	}
 
 	// 读取当前工作区的文件内容（新内容）
@@ -438,7 +381,6 @@ func (s *GitService) GetWorkingDiff(filePath string) (*WorkingDiffResponse, erro
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// 文件被删除，新内容为空
 			newContent = ""
 		} else {
 			return nil, fmt.Errorf("读取文件失败: %w", err)
@@ -448,23 +390,9 @@ func (s *GitService) GetWorkingDiff(filePath string) (*WorkingDiffResponse, erro
 	}
 
 	// 获取最新提交中的文件内容（旧内容）
-	var oldContent string
-	head, err := repo.Head()
+	oldContent, err := gitutil.OutputIn(s.projectDir, "show", "HEAD:"+filePath)
 	if err != nil {
-		return nil, fmt.Errorf("获取HEAD失败: %w", err)
-	}
-
-	commit, err := repo.CommitObject(head.Hash())
-	if err != nil {
-		return nil, fmt.Errorf("获取提交失败: %w", err)
-	}
-
-	// 尝试获取文件在最新提交中的内容
-	file, err := commit.File(filePath)
-	if err == nil {
-		oldContent, _ = file.Contents()
-	} else {
-		// 文件在最新提交中不存在（新文件）
+		// 文件在 HEAD 中不存在（新文件）
 		oldContent = ""
 	}
 
@@ -498,71 +426,51 @@ func (s *GitService) InitRepo() (*InitRepoResponse, error) {
 		}, nil
 	}
 
-	// 初始化Git仓库
-	repo, err := git.PlainInit(s.projectDir, false)
-	if err != nil {
+	// git init
+	if err := gitutil.RunIn(s.projectDir, "init"); err != nil {
 		return nil, fmt.Errorf("初始化仓库失败: %w", err)
 	}
 
-	// 配置Git用户信息
-	cfg, err := repo.Config()
-	if err != nil {
-		return nil, fmt.Errorf("获取配置失败: %w", err)
-	}
-	cfg.User.Name = "AI Novelist"
-	cfg.User.Email = "noreply@ai-novelist.local"
-	if err := repo.SetConfig(cfg); err != nil {
-		return nil, fmt.Errorf("设置配置失败: %w", err)
-	}
+	// 配置 Git 用户信息
+	_ = gitutil.RunIn(s.projectDir, "config", "user.name", "AI Novelist")
+	_ = gitutil.RunIn(s.projectDir, "config", "user.email", "noreply@ai-novelist.local")
 
-	// 获取工作区
-	w, err := repo.Worktree()
+	// 创建空初始提交
+	out, err := gitutil.CombinedOutputIn(s.projectDir, "commit", "--allow-empty", "-m", "Initial commit (empty)")
 	if err != nil {
-		return nil, fmt.Errorf("获取工作区失败: %w", err)
+		return nil, fmt.Errorf("创建空初始提交失败: %w\n%s", err, out)
 	}
+	emptyHash, _ := gitutil.OutputIn(s.projectDir, "rev-parse", "HEAD")
 
-	// 第一步：创建完全空的初始提交
-	now := time.Now()
-	emptyCommit, err := w.Commit("Initial commit (empty)", &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  "AI Novelist",
-			Email: "noreply@ai-novelist.local",
-			When:  now,
-		},
-		Committer: &object.Signature{
-			Name:  "AI Novelist",
-			Email: "noreply@ai-novelist.local",
-			When:  now,
-		},
-		AllowEmptyCommits: true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建空初始提交失败: %w", err)
-	}
-
-	// 第二步：添加所有文件并提交
-	if err := w.AddWithOptions(&git.AddOptions{All: true}); err != nil {
+	// 添加所有文件
+	if err := gitutil.RunIn(s.projectDir, "add", "-A"); err != nil {
 		return nil, fmt.Errorf("添加文件失败: %w", err)
 	}
 
-	_, err = w.Commit("Initial checkpoint", &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  "AI Novelist",
-			Email: "noreply@ai-novelist.local",
-			When:  now,
-		},
-		Committer: &object.Signature{
-			Name:  "AI Novelist",
-			Email: "noreply@ai-novelist.local",
-			When:  now,
-		},
-	})
+	// 提交
+	out2, err := gitutil.CombinedOutputIn(s.projectDir, "commit", "-m", "Initial checkpoint")
 	if err != nil {
-		return nil, fmt.Errorf("创建初始存档点失败: %w", err)
+		return nil, fmt.Errorf("创建初始存档点失败: %w\n%s", err, out2)
 	}
 
 	return &InitRepoResponse{
 		Success: true,
-		Message: fmt.Sprintf("Git仓库初始化成功, 空提交: %s", emptyCommit.String()[:8]),
+		Message: fmt.Sprintf("Git仓库初始化成功, 空提交: %s", truncateHash(emptyHash)),
 	}, nil
+}
+
+func timeNow() string {
+	// 简单的时间格式化，不依赖 time 包
+	out, err := gitutil.OutputIn("", "log", "-1", "--format=%ci")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+func truncateHash(hash string) string {
+	if len(hash) > 8 {
+		return hash[:8]
+	}
+	return hash
 }

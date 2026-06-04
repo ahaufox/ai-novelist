@@ -50,6 +50,10 @@ export function GetVersion() {
   return window['go']['main']['App']['GetVersion']();
 }
 
+export function GitAllCommits(arg1) {
+  return window['go']['main']['App']['GitAllCommits'](arg1);
+}
+
 export function GitBranches() {
   return window['go']['main']['App']['GitBranches']();
 }
@@ -66,8 +70,16 @@ export function GitFullGraph(arg1) {
   return window['go']['main']['App']['GitFullGraph'](arg1);
 }
 
+export function GitGraphOutput(arg1) {
+  return window['go']['main']['App']['GitGraphOutput'](arg1);
+}
+
 export function GitHistory(arg1) {
   return window['go']['main']['App']['GitHistory'](arg1);
+}
+
+export function GitStructuredGraph(arg1) {
+  return window['go']['main']['App']['GitStructuredGraph'](arg1);
 }
 
 export function GitSwitchBranch(arg1) {

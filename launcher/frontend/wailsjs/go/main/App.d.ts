@@ -27,6 +27,8 @@ export function GetLogs():Promise<string>;
 
 export function GetVersion():Promise<string>;
 
+export function GitAllCommits(arg1:number):Promise<Array<gitman.CommitDetail>>;
+
 export function GitBranches():Promise<Array<gitman.BranchInfo>>;
 
 export function GitCheckout(arg1:string):Promise<void>;
@@ -35,7 +37,11 @@ export function GitCreateBranch(arg1:string):Promise<void>;
 
 export function GitFullGraph(arg1:number):Promise<Array<gitman.CommitDetail>>;
 
+export function GitGraphOutput(arg1:number):Promise<Array<gitman.GraphLine>>;
+
 export function GitHistory(arg1:number):Promise<Array<gitman.CommitDetail>>;
+
+export function GitStructuredGraph(arg1:number):Promise<gitman.GraphOutput>;
 
 export function GitSwitchBranch(arg1:string):Promise<void>;
 

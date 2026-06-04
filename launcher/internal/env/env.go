@@ -22,8 +22,12 @@ type Logger interface {
 	Progress(percent int)
 }
 
-func getBinDir(baseDir string) string {
-	return filepath.Join(baseDir, "bin")
+func GetToolsDir() string {
+	exePath, err := os.Executable()
+	if err != nil {
+		return filepath.Join(".", "tools")
+	}
+	return filepath.Join(filepath.Dir(exePath), "tools")
 }
 
 // DetectVenvPython 检测 .venv 中的 Python
@@ -37,7 +41,7 @@ func DetectVenvPython(baseDir string) (string, bool) {
 
 // DetectNode 检测便携版 Node.js
 func DetectNode(baseDir string) (string, bool) {
-	p := filepath.Join(getBinDir(baseDir), "node", "node.exe")
+	p := filepath.Join(GetToolsDir(), "node", "node.exe")
 	if _, err := os.Stat(p); err == nil {
 		return p, true
 	}
@@ -173,14 +177,14 @@ func EnsureVenv(baseDir string, pythonExe string, logger Logger) (string, error)
 	return venvPython, nil
 }
 
-func DownloadNode(baseDir string, logger Logger) error {
-	binDir := getBinDir(baseDir)
-	os.MkdirAll(binDir, os.ModePerm)
+func DownloadNode(logger Logger) error {
+	toolsDir := GetToolsDir()
+	os.MkdirAll(toolsDir, os.ModePerm)
 
-	nodeDir := filepath.Join(binDir, "node")
+	nodeDir := filepath.Join(toolsDir, "node")
 
 	url := "https://npmmirror.com/mirrors/node/v24.15.0/node-v24.15.0-win-x64.zip"
-	zipPath := filepath.Join(binDir, "node.zip")
+	zipPath := filepath.Join(toolsDir, "node.zip")
 
 	logger.Logf("正在下载 Node.js 24.15.0 ...")
 	if err := downloadFile(url, zipPath, logger); err != nil {
@@ -188,7 +192,7 @@ func DownloadNode(baseDir string, logger Logger) error {
 	}
 
 	logger.Logf("正在解压 Node.js ...")
-	tmpDir := filepath.Join(binDir, "node_tmp")
+	tmpDir := filepath.Join(toolsDir, "node_tmp")
 	os.RemoveAll(tmpDir)
 	os.MkdirAll(tmpDir, os.ModePerm)
 	if err := unzip(zipPath, tmpDir); err != nil {

@@ -10,26 +10,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v6"
-	"github.com/go-git/go-git/v6/config"
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/storage/memory"
-	"gopkg.in/yaml.v3"
+	"launcher/internal/gitutil"
 )
 
-const ConfigFile = "config.yaml"
+// 硬编码配置 — 不再依赖外部 config.yaml
+const (
+	DefaultRemoteURL  = "https://denghuominghui.top/api/git/repo.git"
+	DefaultProjectDir = "qingzhu"
+)
 
 type Config struct {
-	App struct {
-		Name string `yaml:"name"`
-	} `yaml:"app"`
-	Python struct {
-		Require3_12 bool `yaml:"require_3_12"`
-	} `yaml:"python"`
 	Git struct {
-		RemoteURL  string `yaml:"remote_url"`
-		ProjectDir string `yaml:"project_dir"`
-	} `yaml:"git"`
+		RemoteURL  string
+		ProjectDir string
+	}
 }
 
 const PipMirror = "https://mirrors.aliyun.com/pypi/simple/"
@@ -72,38 +66,13 @@ func GetProjectDir(cfg *Config) string {
 	return projectDir
 }
 
-func configPath() string {
-	return filepath.Join(getExeDir(), ConfigFile)
-}
-
-// EnsureRipgrep 将启动器同级目录的 rg.exe 复制到项目 bin 目录
-func EnsureRipgrep(projectDir string) error {
+// EnsureRipgrep 检查 tools/ 目录下是否存在 rg.exe
+func EnsureRipgrep() error {
 	exeDir := getExeDir()
-	src := filepath.Join(exeDir, "rg.exe")
-	dstDir := filepath.Join(projectDir, "bin")
-	dst := filepath.Join(dstDir, "rg.exe")
-
-	if _, err := os.Stat(dst); err == nil {
-		return nil
+	rgPath := filepath.Join(exeDir, "tools", "rg.exe")
+	if _, err := os.Stat(rgPath); os.IsNotExist(err) {
+		return fmt.Errorf("未找到 rg.exe: %s（请确保分发包中包含 tools/rg.exe）", rgPath)
 	}
-
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		return fmt.Errorf("未在启动器同级目录找到 rg.exe: %s", src)
-	}
-
-	if err := os.MkdirAll(dstDir, 0755); err != nil {
-		return fmt.Errorf("创建 bin 目录失败: %w", err)
-	}
-
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("读取 rg.exe 失败: %w", err)
-	}
-
-	if err := os.WriteFile(dst, data, 0755); err != nil {
-		return fmt.Errorf("复制 rg.exe 失败: %w", err)
-	}
-
 	return nil
 }
 
@@ -144,10 +113,10 @@ func EnsureVcRedist(projectDir string) error {
 	return nil
 }
 
-// EnsureGit 检查启动器同级目录是否有 PortableGit 安装包，下载后解压到 qingzhu/bin/git/ 下
-func EnsureGit(projectDir string, logger Logger) error {
+// EnsureGit 检查 tools/git/ 下是否有 git.exe，没有则从 tools/ 下的安装包解压
+func EnsureGit(logger Logger) error {
 	exeDir := getExeDir()
-	dstDir := filepath.Join(projectDir, "bin", "git")
+	dstDir := filepath.Join(exeDir, "tools", "git")
 	gitExe := filepath.Join(dstDir, "bin", "git.exe")
 
 	// 已存在则跳过
@@ -155,15 +124,18 @@ func EnsureGit(projectDir string, logger Logger) error {
 		return nil
 	}
 
-	// 检查启动器同级目录是否有安装包
+	// 检查 tools/ 目录下是否有安装包
 	installerName := "PortableGit-2.54.0-64-bit.7z.exe"
-	installerPath := filepath.Join(exeDir, installerName)
+	installerPath := filepath.Join(exeDir, "tools", installerName)
 
 	if _, err := os.Stat(installerPath); os.IsNotExist(err) {
-		// 下载
+		// 下载到 tools/ 目录
 		url := "https://registry.npmmirror.com/-/binary/git-for-windows/v2.54.0.windows.1/PortableGit-2.54.0-64-bit.7z.exe"
 		if logger != nil {
 			logger.Logf("正在下载 Git 便携包 ...")
+		}
+		if err := os.MkdirAll(filepath.Join(exeDir, "tools"), 0755); err != nil {
+			return fmt.Errorf("创建 tools 目录失败: %w", err)
 		}
 		if err := downloadFile(url, installerPath, logger); err != nil {
 			return fmt.Errorf("下载 Git 便携包失败: %w", err)
@@ -246,24 +218,17 @@ func downloadFile(url, dest string, logger Logger) error {
 	return nil
 }
 
+// LoadConfig 返回硬编码配置，不再读取外部 config.yaml
 func LoadConfig() (*Config, error) {
-	data, err := os.ReadFile(configPath())
-	if err != nil {
-		return nil, err
-	}
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
-}
-
-func SaveConfig(cfg *Config) error {
-	data, err := yaml.Marshal(cfg)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(configPath(), data, 0644)
+	return &Config{
+		Git: struct {
+			RemoteURL  string
+			ProjectDir string
+		}{
+			RemoteURL:  DefaultRemoteURL,
+			ProjectDir: DefaultProjectDir,
+		},
+	}, nil
 }
 
 // GetRemoteLatestCommit 通过 git ls-remote 获取远程仓库指定分支的最新 commit
@@ -272,12 +237,13 @@ func GetRemoteLatestCommit(remoteURL, branch string, logger Logger) (*CommitInfo
 		logger.Logf("[DEBUG] 开始获取远程提交: remoteURL=%s, branch=%s", remoteURL, branch)
 	}
 
-	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
-		Name: "origin",
-		URLs: []string{remoteURL},
-	})
+	gitExe, err := gitutil.GetGitExe()
+	if err != nil {
+		return nil, fmt.Errorf("获取 git 路径失败: %w", err)
+	}
 
-	refs, err := remote.List(&git.ListOptions{})
+	cmd := exec.Command(gitExe, "ls-remote", remoteURL, fmt.Sprintf("refs/heads/%s", branch))
+	out, err := cmd.Output()
 	if err != nil {
 		if logger != nil {
 			logger.Logf("[DEBUG] ls-remote 失败: %v", err)
@@ -285,57 +251,61 @@ func GetRemoteLatestCommit(remoteURL, branch string, logger Logger) (*CommitInfo
 		return nil, fmt.Errorf("获取远程引用失败: %w", err)
 	}
 
+	output := strings.TrimSpace(string(out))
+	if output == "" {
+		return nil, fmt.Errorf("未找到远程分支 %s", branch)
+	}
+
+	// 输出格式: "<sha>\trefs/heads/<branch>"
+	parts := strings.SplitN(output, "\t", 2)
+	sha := parts[0]
 	if logger != nil {
-		logger.Logf("[DEBUG] ls-remote 返回 %d 个引用", len(refs))
+		logger.Logf("[DEBUG] 获取远程提交成功: SHA=%s", sha[:7])
 	}
-
-	// 目标引用名: refs/heads/{branch}
-	targetRef := plumbing.NewBranchReferenceName(branch)
-	for _, ref := range refs {
-		if ref.Name() == targetRef {
-			sha := ref.Hash().String()
-			if logger != nil {
-				logger.Logf("[DEBUG] 获取远程提交成功: SHA=%s", sha[:7])
-			}
-			return &CommitInfo{
-				SHA:     sha,
-				Message: "",
-				Date:    "",
-			}, nil
-		}
-	}
-
-	return nil, fmt.Errorf("未找到远程分支 %s", branch)
+	return &CommitInfo{
+		SHA:     sha,
+		Message: "",
+		Date:    "",
+	}, nil
 }
 
 func GetLocalCommit(projectDir string) (*CommitInfo, error) {
-	repo, err := git.PlainOpen(projectDir)
+	sha, err := gitutil.OutputIn(projectDir, "rev-parse", "HEAD")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("获取本地 commit 失败: %w", err)
 	}
-	head, err := repo.Head()
+	sha = strings.TrimSpace(sha)
+
+	// 获取 message 和 date
+	info, err := gitutil.OutputIn(projectDir, "log", "-1", "--format=%s|%aI", "HEAD")
 	if err != nil {
-		return nil, err
+		// 可能没有提交记录
+		return &CommitInfo{SHA: sha}, nil
 	}
-	commit, err := repo.CommitObject(head.Hash())
-	if err != nil {
-		return nil, err
+	parts := strings.SplitN(info, "|", 2)
+	message := ""
+	date := ""
+	if len(parts) >= 1 {
+		message = strings.TrimSpace(parts[0])
 	}
+	if len(parts) >= 2 {
+		date = strings.TrimSpace(parts[1])
+	}
+
 	return &CommitInfo{
-		SHA:     head.Hash().String(),
-		Message: strings.TrimSpace(commit.Message),
-		Date:    commit.Committer.When.Format(time.RFC3339),
+		SHA:     sha,
+		Message: message,
+		Date:    date,
 	}, nil
 }
 
 func CheckUpdateStatus(cfg *Config, logger Logger) (*UpdateStatus, error) {
 	projectDir := GetProjectDir(cfg)
-	repo, err := git.PlainOpen(projectDir)
 	currentBranch := "main"
-	if err == nil {
-		head, _ := repo.Head()
-		if head != nil && head.Name().IsBranch() {
-			currentBranch = head.Name().Short()
+	if _, err := os.Stat(filepath.Join(projectDir, ".git")); err == nil {
+		b, err := gitutil.OutputIn(projectDir, "rev-parse", "--abbrev-ref", "HEAD")
+		if err == nil && b != "" {
+			currentBranch = strings.TrimSpace(b)
 		}
 	}
 
@@ -364,158 +334,100 @@ func CheckUpdateStatus(cfg *Config, logger Logger) (*UpdateStatus, error) {
 	return status, nil
 }
 
-// syncBranches 用已打开的 repo 同步远程分支：
-//   - 远程新分支 → 自动创建本地跟踪分支
-//   - 远程已删除的分支 → 删除对应的本地分支（当前分支除外）
-func syncBranches(repo *git.Repository, logger Logger) {
-	head, err := repo.Head()
-	if err != nil {
-		logger.Logf("[syncBranches] 获取 HEAD 失败: %v", err)
-		return
-	}
-	currentBranch := head.Name().Short()
-	logger.Logf("[syncBranches] 当前分支: %s", currentBranch)
-
-	// 收集所有远程分支名（去掉 origin/ 前缀）
-	remoteBranches := make(map[string]plumbing.Hash)
-	rIter, err := repo.References()
-	if err != nil {
-		logger.Logf("[syncBranches] 遍历引用失败: %v", err)
-		return
-	}
-	defer rIter.Close()
-	for {
-		ref, err := rIter.Next()
-		if err != nil {
-			break
-		}
-		if ref.Type() != plumbing.HashReference || !ref.Name().IsRemote() {
-			continue
-		}
-		remoteShort := ref.Name().Short()
-		localName := remoteShort
-		if idx := strings.Index(remoteShort, "/"); idx >= 0 {
-			localName = remoteShort[idx+1:]
-		}
-		logger.Logf("[syncBranches] 发现远程跟踪引用: %s -> 本地分支名: %s hash: %s", remoteShort, localName, ref.Hash().String()[:7])
-		remoteBranches[localName] = ref.Hash()
-	}
-	logger.Logf("[syncBranches] 共发现 %d 个远程跟踪引用", len(remoteBranches))
-
-	// 遍历本地分支，做双向同步
-	bIter, err := repo.Branches()
-	if err != nil {
-		logger.Logf("[syncBranches] 遍历分支失败: %v", err)
-		return
-	}
-	defer bIter.Close()
-
-	for {
-		ref, err := bIter.Next()
-		if err != nil {
-			break
-		}
-		localName := ref.Name().Short()
-		localHash := ref.Hash().String()[:7]
-
-		remoteHash, existsOnRemote := remoteBranches[localName]
-		if existsOnRemote {
-			remoteHashShort := remoteHash.String()[:7]
-			// 远程存在且本地指向不同 commit → 更新本地指向
-			if ref.Hash() != remoteHash {
-				logger.Logf("[syncBranches] 更新本地分支 %s: %s -> %s", localName, localHash, remoteHashShort)
-				localRef := plumbing.NewBranchReferenceName(localName)
-				newRef := plumbing.NewHashReference(localRef, remoteHash)
-				if err := repo.Storer.SetReference(newRef); err != nil {
-					logger.Logf("[syncBranches] 更新分支 %s 失败: %v", localName, err)
-				}
-			} else {
-				logger.Logf("[syncBranches] 本地分支 %s 已是最新: %s", localName, localHash)
-			}
-			delete(remoteBranches, localName)
-		} else {
-			// 远程已删除该分支，删除本地分支（当前分支除外）
-			if localName != currentBranch {
-				logger.Logf("[syncBranches] 删除本地分支: %s (%s) - 远程已删除", localName, localHash)
-				localRef := plumbing.NewBranchReferenceName(localName)
-				err1 := repo.Storer.RemoveReference(localRef)
-				err2 := repo.DeleteBranch(localName)
-				if err1 != nil {
-					logger.Logf("[syncBranches] 删除引用 %s 失败: %v", localName, err1)
-				}
-				if err2 != nil {
-					logger.Logf("[syncBranches] 删除分支 %s 失败: %v", localName, err2)
-				}
-			} else {
-				logger.Logf("[syncBranches] 跳过当前分支 %s（远程已删除但保留本地）", localName)
-			}
-		}
-	}
-
-	// 剩余在 remoteBranches 中的是远程有但本地没有的分支 → 创建本地跟踪分支
-	logger.Logf("[syncBranches] 剩余 %d 个远程分支需要创建本地跟踪", len(remoteBranches))
-	for localName, hash := range remoteBranches {
-		logger.Logf("[syncBranches] 创建本地跟踪分支: %s -> %s", localName, hash.String()[:7])
-		localRef := plumbing.NewBranchReferenceName(localName)
-		newRef := plumbing.NewHashReference(localRef, hash)
-		if err := repo.Storer.SetReference(newRef); err != nil {
-			logger.Logf("[syncBranches] 创建分支引用 %s 失败: %v", localName, err)
-			continue
-		}
-		if err := repo.CreateBranch(&config.Branch{
-			Name:   localName,
-			Remote: "origin",
-			Merge:  localRef,
-		}); err != nil {
-			logger.Logf("[syncBranches] 配置跟踪分支 %s 失败: %v", localName, err)
-		}
-	}
-	logger.Logf("[syncBranches] 分支同步完成")
-}
-
-// SyncBranchesFromRemot
+// SyncBranchesFromRemote 同步远程分支到本地
 func SyncBranchesFromRemote(cfg *Config, logger Logger) {
 	projectDir := GetProjectDir(cfg)
 	if _, err := os.Stat(filepath.Join(projectDir, ".git")); os.IsNotExist(err) {
 		logger.Logf("项目未部署，跳过分支同步")
 		return
 	}
-	repo, err := git.PlainOpen(projectDir)
-	if err != nil {
-		logger.Logf("打开仓库失败，跳过分支同步: %v", err)
-		return
-	}
-	w, err := repo.Worktree()
-	if err != nil {
-		logger.Logf("获取工作区失败: %v", err)
-		return
-	}
-	err = repo.Fetch(&git.FetchOptions{
-		RemoteName: "origin",
-		Prune:      true,
-		Progress:   &logWriter{logger: logger},
-	})
-	if err == git.NoErrAlreadyUpToDate {
-		logger.Logf("远程已是最新")
-	} else if err != nil {
+
+	logger.Logf("正在 fetch 远程...")
+	if err := gitutil.RunIn(projectDir, "fetch", "--prune", "origin"); err != nil {
 		logger.Logf("fetch 远程失败: %v", err)
 		return
 	}
-	// 强行 hard reset 当前分支到远程最新
-	head, err := repo.Head()
-	if err == nil && head.Name().IsBranch() {
-		branchName := head.Name().Short()
-		refName := plumbing.NewRemoteReferenceName("origin", branchName)
-		ref, err := repo.Reference(refName, true)
-		if err == nil {
-			_ = w.Reset(&git.ResetOptions{
-				Mode:   git.HardReset,
-				Commit: ref.Hash(),
-			})
-			logger.Logf("强制重置 %s 到远程最新: %s", branchName, ref.Hash().String()[:7])
+
+	// 强制重置当前分支到远程最新
+	currentBranch, err := gitutil.OutputIn(projectDir, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		logger.Logf("获取当前分支失败: %v", err)
+		return
+	}
+	currentBranch = strings.TrimSpace(currentBranch)
+	if currentBranch != "" && currentBranch != "HEAD" {
+		remoteRef := "origin/" + currentBranch
+		if err := gitutil.RunIn(projectDir, "reset", "--hard", remoteRef); err != nil {
+			logger.Logf("重置 %s 到远程最新失败: %v", currentBranch, err)
+		} else {
+			logger.Logf("强制重置 %s 到远程最新", currentBranch)
 		}
 	}
-	syncBranches(repo, logger)
+
+	// 同步分支：删除远程已删除的分支，创建新跟踪分支
+	syncBranches(projectDir, currentBranch, logger)
+}
+
+// syncBranches 同步本地分支与远程分支
+func syncBranches(projectDir string, currentBranch string, logger Logger) {
+	logger.Logf("[syncBranches] 当前分支: %s", currentBranch)
+	logger.Logf("[syncBranches] 正在同步分支...")
+
+	// 获取所有远程分支名 (origin/xxx 格式)
+	remoteBranchesOut, err := gitutil.OutputIn(projectDir, "branch", "-r", "--format=%(refname:short)")
+	if err != nil {
+		logger.Logf("[syncBranches] 获取远程分支失败: %v", err)
+		return
+	}
+
+	remoteBranches := make(map[string]bool)
+	if remoteBranchesOut != "" {
+		for _, rb := range strings.Split(remoteBranchesOut, "\n") {
+			rb = strings.TrimSpace(rb)
+			if rb != "" {
+				remoteBranches[rb] = true
+			}
+		}
+	}
+
+	// 获取所有本地分支名
+	localBranchesOut, err := gitutil.OutputIn(projectDir, "branch", "--format=%(refname:short)")
+	if err != nil {
+		logger.Logf("[syncBranches] 获取本地分支失败: %v", err)
+		return
+	}
+
+	if localBranchesOut != "" {
+		for _, lb := range strings.Split(localBranchesOut, "\n") {
+			lb = strings.TrimSpace(lb)
+			if lb == "" {
+				continue
+			}
+			remoteRef := "origin/" + lb
+			if !remoteBranches[remoteRef] {
+				if lb != currentBranch {
+					logger.Logf("[syncBranches] 删除本地分支: %s - 远程已删除", lb)
+					_ = gitutil.RunIn(projectDir, "branch", "-D", lb)
+				} else {
+					logger.Logf("[syncBranches] 跳过当前分支 %s（远程已删除但保留本地）", lb)
+				}
+			}
+		}
+	}
+
+	// 创建远程有但本地没有的跟踪分支
+	for remoteRef := range remoteBranches {
+		localName := strings.TrimPrefix(remoteRef, "origin/")
+		if localName == remoteRef {
+			continue
+		}
+		out, _ := gitutil.OutputIn(projectDir, "rev-parse", "--verify", "--quiet", "refs/heads/"+localName)
+		if out == "" {
+			logger.Logf("[syncBranches] 创建本地跟踪分支: %s -> %s", localName, remoteRef)
+			_ = gitutil.RunIn(projectDir, "branch", "--track", localName, remoteRef)
+		}
+	}
+	logger.Logf("[syncBranches] 分支同步完成")
 }
 
 // PullUpdates 根据项目目录是否存在，执行克隆或拉取更新
@@ -529,51 +441,35 @@ func PullUpdates(cfg *Config, logger Logger) error {
 	}
 
 	logger.Logf("开始拉取更新...")
-	repo, err := git.PlainOpen(projectDir)
-	if err != nil {
-		return fmt.Errorf("打开本地仓库失败: %w", err)
-	}
-	w, err := repo.Worktree()
-	if err != nil {
-		return fmt.Errorf("获取工作区失败: %w", err)
-	}
-	err = repo.Fetch(&git.FetchOptions{
-		RemoteName: "origin",
-		Prune:      true,
-		Progress:   &logWriter{logger: logger},
-	})
-	if err == git.NoErrAlreadyUpToDate {
-		logger.Logf("远程已是最新（NoErrAlreadyUpToDate），继续同步分支")
-	} else if err != nil {
+
+	// git fetch --prune origin
+	if err := gitutil.RunIn(projectDir, "fetch", "--prune", "origin"); err != nil {
 		return fmt.Errorf("获取远程更新失败: %w", err)
-	} else {
-		logger.Logf("远程 fetch 成功（Prune=true），已清理已删除分支的远程跟踪引用")
 	}
-	head, err := repo.Head()
+	logger.Logf("远程 fetch 成功")
+
+	// 获取当前分支
+	currentBranch, err := gitutil.OutputIn(projectDir, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
-		return fmt.Errorf("获取 HEAD 失败: %w", err)
+		return fmt.Errorf("获取当前分支失败: %w", err)
 	}
-	if head.Name().IsBranch() {
-		branchName := head.Name().Short()
-		refName := plumbing.NewRemoteReferenceName("origin", branchName)
-		ref, err := repo.Reference(refName, true)
-		if err != nil {
-			return fmt.Errorf("获取远程分支引用失败: %w", err)
-		}
-		err = w.Reset(&git.ResetOptions{
-			Mode:   git.HardReset,
-			Commit: ref.Hash(),
-		})
-		if err != nil {
+	currentBranch = strings.TrimSpace(currentBranch)
+
+	if currentBranch != "" && currentBranch != "HEAD" {
+		// git reset --hard origin/<branch>
+		remoteRef := "origin/" + currentBranch
+		if err := gitutil.RunIn(projectDir, "reset", "--hard", remoteRef); err != nil {
 			return fmt.Errorf("重置到最新提交失败: %w", err)
 		}
+		logger.Logf("已重置 %s 到 %s", currentBranch, remoteRef)
 	}
+
 	logger.Logf("正在同步本地跟踪分支...")
-	syncBranches(repo, logger)
+	syncBranches(projectDir, currentBranch, logger)
 
 	logger.Logf("更新完成")
-	if err := EnsureRipgrep(projectDir); err != nil {
-		return fmt.Errorf("复制 rg.exe 失败: %w", err)
+	if err := EnsureRipgrep(); err != nil {
+		return fmt.Errorf("检查 rg.exe 失败: %w", err)
 	}
 	return nil
 }
@@ -581,25 +477,28 @@ func PullUpdates(cfg *Config, logger Logger) error {
 func cloneProject(cfg *Config, logger Logger) error {
 	projectDir := GetProjectDir(cfg)
 
-	_, err := git.PlainClone(projectDir, &git.CloneOptions{
-		URL:      cfg.Git.RemoteURL,
-		Progress: &logWriter{logger: logger},
-	})
+	gitExe, err := gitutil.GetGitExe()
 	if err != nil {
+		return fmt.Errorf("获取 git 路径失败: %w", err)
+	}
+
+	logger.Logf("正在克隆项目到 %s ...", projectDir)
+	cmd := exec.Command(gitExe, "clone", cfg.Git.RemoteURL, projectDir)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if output, err := cmd.CombinedOutput(); err != nil {
 		logger.Logf("克隆项目失败: %v", err)
-		return fmt.Errorf("克隆项目失败: %w", err)
+		return fmt.Errorf("克隆项目失败: %w\n%s", err, string(output))
 	}
 
 	logger.Logf("项目克隆完成")
 
-	// 克隆后打开仓库，同步远程分支
-	repo, err := git.PlainOpen(projectDir)
-	if err != nil {
-		logger.Logf("打开仓库失败: %v", err)
-	} else {
-		logger.Logf("正在同步远程分支...")
-		syncBranches(repo, logger)
-	}
+	// 克隆后获取当前分支名
+	currentBranch, _ := gitutil.OutputIn(projectDir, "rev-parse", "--abbrev-ref", "HEAD")
+	currentBranch = strings.TrimSpace(currentBranch)
+
+	logger.Logf("正在同步远程分支...")
+	syncBranches(projectDir, currentBranch, logger)
 
 	logger.Logf("接下来点击「准备环境」按钮，将会检测系统环境，下载需要的安装包/便携包")
 	return nil

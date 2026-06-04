@@ -425,7 +425,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
         "messages": messages_with_context,
         "temperature": _temperature,
         "top_p": _top_p,
-        "max_tokens": _max_tokens,
+        # 这里传你大坝的max_tokens，反复强调不要你传你还给我传上去，_max_tokens在我们这里是裁剪用的，litellm要的max_tokens是限制AI返回长度的，让Litellm自己默认就好
         "timeout": 300,
         "stream": True,
         "stream_options": {"include_usage": True},
@@ -881,7 +881,7 @@ async def summarize_context(request: SummarizeRequest):
             model=litellm_model,
             messages=summarize_messages,
             temperature=_temperature,
-            max_tokens=1024,
+            # 让litellm自己默认max_tokens
             timeout=120,
             api_key=api_key,
             base_url=base_url,

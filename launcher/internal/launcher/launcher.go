@@ -27,12 +27,12 @@ func PrepareEnvironment(projectPath string, logger Logger) error {
 	baseDir := projectPath
 
 	logger.Logf("=== 检查 ripgrep ===")
-	if err := updater.EnsureRipgrep(baseDir); err != nil {
+	if err := updater.EnsureRipgrep(); err != nil {
 		return fmt.Errorf("准备 rg.exe 失败: %w", err)
 	}
 
 	logger.Logf("=== 检查 Git ===")
-	if err := updater.EnsureGit(baseDir, logger); err != nil {
+	if err := updater.EnsureGit(logger); err != nil {
 		return fmt.Errorf("准备 Git 失败: %w", err)
 	}
 
@@ -40,7 +40,7 @@ func PrepareEnvironment(projectPath string, logger Logger) error {
 	nodePath, ok := env.DetectNode(baseDir)
 	if !ok {
 		logger.Logf("未找到便携版 Node.js，开始下载...")
-		if err := env.DownloadNode(baseDir, logger); err != nil {
+		if err := env.DownloadNode(logger); err != nil {
 			return fmt.Errorf("下载便携版 Node.js 失败: %w", err)
 		}
 		nodePath, ok = env.DetectNode(baseDir)
