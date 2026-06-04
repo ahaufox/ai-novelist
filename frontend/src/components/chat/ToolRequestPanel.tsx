@@ -1,6 +1,6 @@
 import { useSelector, useDispatch, useStore } from 'react-redux';
 import { readBinaryFrames } from '../../utils/binaryFrameReader';
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import type { RootState } from '../../types';
 import type { ToolCall } from '../../types/langgraph';
 import { setIsStreaming, createAiMessage, updateAiMessage, addUserMessage, setMessage, setMessagesTree } from '../../store/chat';
@@ -22,10 +22,6 @@ const ToolRequestPanel = () => {
   const autoApproveRef = useRef(false);
   const autoApproveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const processingRef = useRef(false);
-  const [debugInfo, setDebugInfo] = useState<string[]>([]);
-  const addDebug = useCallback((msg: string) => {
-    setDebugInfo(prev => [...prev.slice(-9), msg]);
-  }, []);
 
   const { processFileToolCalls } = useFileToolHandler();
 
@@ -56,17 +52,21 @@ const ToolRequestPanel = () => {
     // 计算用户对AI建议内容的修改 diff + final_content
     let userDiff: string | null = null;
     let finalContent: string | undefined = undefined;
+    const debugLines: string[] = [];
+    const addLine = (msg: string) => debugLines.push(msg);
+
     if (argsStr && FILE_TOOLS.includes(toolName)) {
-      addDebug(`[HITL] 处理工具: ${toolName}, args长度: ${argsStr.length}`);
-      addDebug(`[HITL] args前100字: ${argsStr.substring(0, 100)}`);
+      addLine(`[HITL-DEBUG] 处理工具: ${toolName}`);
+      addLine(`  args长度: ${argsStr.length}`);
+      addLine(`  args前100字: ${argsStr.substring(0, 100)}`);
       try {
         const args = JSON.parse(argsStr);
         const path: string | undefined = args.filePath || args.path;
-        addDebug(`[HITL] path: ${path}`);
-        addDebug(`[HITL] currentData keys: ${Object.keys(currentData).length}个`);
-        addDebug(`[HITL] path in currentData: ${path ? (path in currentData) : 'N/A'}`);
-        addDebug(`[HITL] currentData[path]: ${path ? (currentData[path] ? `存在(${currentData[path].length}字符)` : 'undefined') : 'N/A'}`);
-        addDebug(`[HITL] aiSuggestContent[path]: ${path ? (aiSuggestContent[path] ? `存在(${aiSuggestContent[path].length}字符)` : 'undefined') : 'N/A'}`);
+        addLine(`  path: ${path}`);
+        addLine(`  currentData keys(${Object.keys(currentData).length}个): ${Object.keys(currentData).slice(0, 5).join(', ')}`);
+        addLine(`  path in currentData: ${path ? (path in currentData) : 'N/A'}`);
+        addLine(`  currentData[path]: ${path ? (currentData[path] ? `存在(${currentData[path].length}字符)` : '❌ undefined') : 'N/A'}`);
+        addLine(`  aiSuggestContent[path]: ${path ? (aiSuggestContent[path] ? `存在(${aiSuggestContent[path].length}字符)` : '❌ undefined') : 'N/A'}`);
         if (path) {
           if (approved) {
             const aiContent = aiSuggestContent[path];
@@ -77,8 +77,8 @@ const ToolRequestPanel = () => {
             if (currentContent !== undefined) {
               finalContent = currentContent;
             }
-            addDebug(`[HITL] finalContent: ${finalContent ? `已设置(${finalContent.length}字符)` : 'undefined'}`);
-            addDebug(`[HITL] userDiff: ${userDiff ? `已设置(${userDiff.length}字符)` : 'null'}`);
+            addLine(`  finalContent: ${finalContent ? `已设置(${finalContent.length}字符)` : '❌ undefined'}`);
+            addLine(`  userDiff: ${userDiff ? `已设置(${userDiff.length}字符)` : 'null'}`);
             dispatch(saveTabContent({ id: path }));
           } else {
             dispatch(decreaseTab({ tabId: path }));
@@ -87,14 +87,19 @@ const ToolRequestPanel = () => {
           dispatch(clearAiSuggestContent({ id: path }));
         }
       } catch (e) {
-        addDebug(`[HITL] ❌ 解析工具参数失败: ${e}`);
-        addDebug(`[HITL] args前200字: ${argsStr.substring(0, 200)}`);
+        addLine(`  ❌ 解析工具参数失败: ${e}`);
+        addLine(`  args前200字: ${argsStr.substring(0, 200)}`);
         console.error('[HITL-DEBUG] 解析工具参数失败:', e);
       }
     }
 
     if (extra) {
       dispatch(addUserMessage({ id: `lc_run--${crypto.randomUUID()}`, content: extra }));
+    }
+
+    // 弹窗显示调试信息
+    if (debugLines.length > 0) {
+      alert(debugLines.join('\n'));
     }
 
     try {
@@ -275,20 +280,6 @@ const ToolRequestPanel = () => {
               取消
             </button>
           </div>
-          {/* 调试面板 */}
-          {debugInfo.length > 0 && (
-            <div className="bg-black/40 rounded p-2 text-[11px] font-mono leading-relaxed">
-              <div className="text-theme-yellow font-bold mb-1">[HITL-DEBUG]</div>
-              {debugInfo.map((line, i) => {
-                const isError = line.includes('❌');
-                return (
-                  <div key={i} className={isError ? 'text-red-400' : 'text-theme-gray2'}>
-                    {line}
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </>
       )}
     </div>
