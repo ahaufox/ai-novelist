@@ -71,11 +71,17 @@ const ToolRequestPanel = () => {
           if (approved) {
             const aiContent = aiSuggestContent[path];
             const currentContent = currentData[path];
-            if (aiContent !== undefined && currentContent !== undefined && hasDiff(aiContent, currentContent)) {
-              userDiff = computeDiff(aiContent, currentContent);
-            }
+            // 先设置 finalContent，避免 computeDiff 抛异常时 content 丢失
             if (currentContent !== undefined) {
               finalContent = currentContent;
+            }
+            if (aiContent !== undefined && currentContent !== undefined && hasDiff(aiContent, currentContent)) {
+              try {
+                userDiff = computeDiff(aiContent, currentContent);
+              } catch (diffErr) {
+                console.error('[HITL-DEBUG] computeDiff 失败:', diffErr);
+                addLine(`  ⚠️ computeDiff 失败: ${diffErr}`);
+              }
             }
             addLine(`  finalContent: ${finalContent ? `已设置(${finalContent.length}字符)` : '❌ undefined'}`);
             addLine(`  userDiff: ${userDiff ? `已设置(${userDiff.length}字符)` : 'null'}`);

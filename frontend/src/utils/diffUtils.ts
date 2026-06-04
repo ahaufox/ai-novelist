@@ -19,7 +19,12 @@ export const computeDiff = (oldText: string, newText: string): string => {
   const patches = dmp.patch_make(oldText, diff);
   const patchText = dmp.patch_toText(patches);
   // diff-match-patch 会对非ASCII字符进行编码，需要解码
-  return decodeURIComponent(patchText);
+  try {
+    return decodeURIComponent(patchText);
+  } catch {
+    // 如果 patchText 含无效 URI 编码（如 emoji 代理对），返回原始文本
+    return patchText;
+  }
 };
 
 /**
