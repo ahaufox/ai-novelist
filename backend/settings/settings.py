@@ -45,14 +45,14 @@ class Settings:
         self.AUTH_TOKEN_DIR: Path = Path(self.DATA_DIR) / "auth"
         self.AUTH_TOKEN_FILE: Path = self.AUTH_TOKEN_DIR / "tokens.json"
         
-        # 可执行文件路径
+        # 先初始化环境变量管理器（加载 .env 到 os.environ，使后续操作能读取到）
+        self.env_manager = EnvManager(self.ENV_FILE_PATH)
+        
+        # 可执行文件路径（可能在 .env 中设置了 AI_NOVELIST_TOOLS_DIR）
         self.NODE_EXECUTABLE: str = self._get_executable('node.exe')
         self.NPM_EXECUTABLE: str = self._get_executable('npm.cmd')
         self.RG_EXECUTABLE: str = self._get_executable('rg.exe')
         self.GIT_EXECUTABLE: str = self._get_executable('git.exe')
-        
-        # 初始化环境变量管理器
-        self.env_manager = EnvManager(self.ENV_FILE_PATH)
         
         # 加载应用配置（必须在路径初始化之后）
         self.LOG_LEVEL: str = self.get_config("log_level", default="INFO")
