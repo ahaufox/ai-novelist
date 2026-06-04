@@ -63,6 +63,12 @@ class EditTool(ToolDef):
         try:
             # 从 HITL 流程获取最终内容
             if not (ctx.extra and ctx.extra.get("final_content") is not None):
+                print(
+                    f"[HITL-DEBUG] edit 工具缺少 final_content: "
+                    f"ctx.extra={'None' if ctx.extra is None else dict(ctx.extra)}, "
+                    f"filepath={filepath}",
+                    flush=True,
+                )
                 return ExecuteResult(
                     title=filepath,
                     output="Edit requires HITL approval. Please approve the change in the UI.",
