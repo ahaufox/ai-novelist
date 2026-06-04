@@ -52,21 +52,11 @@ const ToolRequestPanel = () => {
     // 计算用户对AI建议内容的修改 diff + final_content
     let userDiff: string | null = null;
     let finalContent: string | undefined = undefined;
-    const debugLines: string[] = [];
-    const addLine = (msg: string) => debugLines.push(msg);
 
     if (argsStr && FILE_TOOLS.includes(toolName)) {
-      addLine(`[HITL-DEBUG] 处理工具: ${toolName}`);
-      addLine(`  args长度: ${argsStr.length}`);
-      addLine(`  args前100字: ${argsStr.substring(0, 100)}`);
       try {
         const args = JSON.parse(argsStr);
         const path: string | undefined = args.filePath || args.path;
-        addLine(`  path: ${path}`);
-        addLine(`  currentData keys(${Object.keys(currentData).length}个): ${Object.keys(currentData).slice(0, 5).join(', ')}`);
-        addLine(`  path in currentData: ${path ? (path in currentData) : 'N/A'}`);
-        addLine(`  currentData[path]: ${path ? (currentData[path] ? `存在(${currentData[path].length}字符)` : '❌ undefined') : 'N/A'}`);
-        addLine(`  aiSuggestContent[path]: ${path ? (aiSuggestContent[path] ? `存在(${aiSuggestContent[path].length}字符)` : '❌ undefined') : 'N/A'}`);
         if (path) {
           if (approved) {
             const aiContent = aiSuggestContent[path];
@@ -79,12 +69,9 @@ const ToolRequestPanel = () => {
               try {
                 userDiff = computeDiff(aiContent, currentContent);
               } catch (diffErr) {
-                console.error('[HITL-DEBUG] computeDiff 失败:', diffErr);
-                addLine(`  ⚠️ computeDiff 失败: ${diffErr}`);
+                console.error('[computeDiff] 失败:', diffErr);
               }
             }
-            addLine(`  finalContent: ${finalContent ? `已设置(${finalContent.length}字符)` : '❌ undefined'}`);
-            addLine(`  userDiff: ${userDiff ? `已设置(${userDiff.length}字符)` : 'null'}`);
             dispatch(saveTabContent({ id: path }));
           } else {
             dispatch(decreaseTab({ tabId: path }));
@@ -93,19 +80,12 @@ const ToolRequestPanel = () => {
           dispatch(clearAiSuggestContent({ id: path }));
         }
       } catch (e) {
-        addLine(`  ❌ 解析工具参数失败: ${e}`);
-        addLine(`  args前200字: ${argsStr.substring(0, 200)}`);
-        console.error('[HITL-DEBUG] 解析工具参数失败:', e);
+        console.error('[HITL] 解析工具参数失败:', e);
       }
     }
 
     if (extra) {
       dispatch(addUserMessage({ id: `lc_run--${crypto.randomUUID()}`, content: extra }));
-    }
-
-    // 弹窗显示调试信息
-    if (debugLines.length > 0) {
-      alert(debugLines.join('\n'));
     }
 
     try {
