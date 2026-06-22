@@ -32,17 +32,17 @@ const ContextProgressBar = () => {
     return typeof contextLength === 'number' ? contextLength : 4096;
   };
 
-  // 计算当前模式的max_tokens
-  const getModeMaxTokens = (): number => {
-    if (!selectedModeId || !allModesData[selectedModeId]) return 4096;
-    return allModesData[selectedModeId].max_tokens || 4096;
+  // 获取当前模式的上下文比例
+  const getModeContextRatio = (): number => {
+    if (!selectedModeId || !allModesData[selectedModeId]) return 0.8;
+    return allModesData[selectedModeId].context_ratio ?? 0.8;
   };
 
   const modelContextLength = getModelContextLength();
-  const modeMaxTokens = getModeMaxTokens();
+  const modeContextRatio = getModeContextRatio();
 
-  // 计算模式max_tokens在模型上下文中的百分比位置
-  const modePercentage = (modeMaxTokens / modelContextLength) * 100;
+  // 上下文比例标记点（百分比位置）
+  const modePercentage = modeContextRatio * 100;
 
   return (
     <div className="px-2.5 py-1.5 border-b border-theme-gray1">
@@ -52,11 +52,11 @@ const ContextProgressBar = () => {
           {/* 背景进度条（模型最大上下文） */}
           <div className="h-full bg-theme-gray3 rounded-small" style={{ width: '100%' }}></div>
           
-          {/* 模式max_tokens标记点 */}
+          {/* 模式上下文比例标记点 */}
           <div
             className="absolute top-0 bottom-0 w-0.5 bg-theme-green"
             style={{ left: `${modePercentage}%` }}
-            title={`模式最大tokens: ${modeMaxTokens.toLocaleString()}`}
+            title={`上下文比例: ${Math.round(modeContextRatio * 100)}%`}
           ></div>
           
           {/* 当前使用tokens进度条 */}

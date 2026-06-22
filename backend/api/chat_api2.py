@@ -366,7 +366,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     _selected_provider = settings.get_config("selectedProvider")
     _temperature = settings.get_config("mode", _mode, "temperature")
     _top_p = settings.get_config("mode", _mode, "top_p")
-    _max_tokens = settings.get_config("mode", _mode, "max_tokens")
+    _context_ratio = settings.get_config("mode", _mode, "context_ratio", default=0.8)
     print(f"[耗时] 读取配置 (6次 get_config): {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
 
     _t = time.perf_counter()
@@ -385,7 +385,7 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
         tools = [_tool_to_openai_schema(t) for t in tool_dict.values()]
         print(f"[耗时] 转换为 OpenAI schema: {(time.perf_counter() - _t_schema)*1000:.1f}ms", flush=True)
 
-    print(f"[参数] 模式={_mode}, 模型={litellm_model}, temp={_temperature}, top_p={_top_p}, max_tokens={_max_tokens}", flush=True)
+    print(f"[参数] 模式={_mode}, 模型={litellm_model}, temp={_temperature}, top_p={_top_p}, context_ratio={_context_ratio}", flush=True)
 
     # 从消息列表中提取最后一条 user 消息作为 user_input（用于 RAG 检索，需要纯文本）
     # 注意：content 可能是 Content Array（@路径附件），用 _extract_content_text 提取纯文本
@@ -407,7 +407,9 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     context_window = settings.get_config(
         "provider", _selected_provider, "favoriteModels", "chat", _selected_model
     ) or 4096
-    trimmed_history = _trim_history(filtered_history, _max_tokens or context_window)
+    # 根据上下文比例计算实际用于裁剪的 max_tokens
+    _max_tokens = int(context_window * _context_ratio)
+    trimmed_history = _trim_history(filtered_history, _max_tokens)
     print(f"[耗时] 裁剪历史消息: {(time.perf_counter() - _t)*1000:.1f}ms", flush=True)
 
     _t = time.perf_counter()

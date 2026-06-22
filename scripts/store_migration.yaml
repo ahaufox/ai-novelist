@@ -22,7 +22,7 @@ mode:
       请好好利用它们，解决用户的需求，或者解答用户的问题'
     temperature: 1.0
     top_p: 0.7
-    max_tokens: 40960
+    context_ratio: 0.8
     additionalInfo:
     - config/store.yaml
     - .aiignore

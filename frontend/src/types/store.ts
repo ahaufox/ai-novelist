@@ -154,7 +154,7 @@ export interface ModeData {
   prompt: string;
   temperature: number;
   top_p: number;
-  max_tokens: number;
+  context_ratio: number;
   additionalInfo: string[];
   tools: string[];
 }

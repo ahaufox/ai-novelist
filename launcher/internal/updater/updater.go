@@ -334,66 +334,97 @@ func CheckUpdateStatus(cfg *Config, logger Logger) (*UpdateStatus, error) {
 	return status, nil
 }
 
-// syncBranches 同步本地分支与远程分支
-func syncBranches(projectDir string, currentBranch string, logger Logger) {
+// syncBranches 同步本地分支与远程分支，使用 ls-remote 直接从服务器查询远程分支列表。
+// 返回第一个错误，但会继续处理完所有分支
+func syncBranches(projectDir string, currentBranch string, logger Logger) error {
 	logger.Logf("[syncBranches] 当前分支: %s", currentBranch)
 	logger.Logf("[syncBranches] 正在同步分支...")
 
-	// 获取所有远程分支名 (origin/xxx 格式)
-	remoteBranchesOut, err := gitutil.OutputIn(projectDir, "branch", "-r", "--format=%(refname:short)")
+	// 获取远程仓库的 remote URL
+	remoteURL, err := gitutil.OutputIn(projectDir, "remote", "get-url", "origin")
 	if err != nil {
-		logger.Logf("[syncBranches] 获取远程分支失败: %v", err)
-		return
+		return fmt.Errorf("[syncBranches] 获取远程 URL 失败: %w", err)
+	}
+	remoteURL = strings.TrimSpace(remoteURL)
+
+	// ★ 使用 git ls-remote --heads 直接从服务器查询远程分支
+	//    这比 git branch -r 更可靠，因为 branch -r 依赖本地缓存的远程跟踪引用，
+	//    如果之前 fetch --prune 清空了本地缓存（如网络波动），branch -r 会返回空，
+	//    导致误判所有本地分支为"远程已删除"
+	lsRemoteOut, err := gitutil.OutputIn(projectDir, "ls-remote", "--heads", remoteURL)
+	if err != nil {
+		return fmt.Errorf("[syncBranches] ls-remote 查询远程分支失败: %w", err)
 	}
 
+	// 解析 ls-remote 输出为远程分支名集合
+	// 输出格式: "<sha>\trefs/heads/<branch_name>"
 	remoteBranches := make(map[string]bool)
-	if remoteBranchesOut != "" {
-		for _, rb := range strings.Split(remoteBranchesOut, "\n") {
-			rb = strings.TrimSpace(rb)
-			if rb != "" {
-				remoteBranches[rb] = true
+	if lsRemoteOut != "" {
+		for _, line := range strings.Split(lsRemoteOut, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				ref := parts[1] // refs/heads/<name>
+				branchName := strings.TrimPrefix(ref, "refs/heads/")
+				if branchName != "" {
+					remoteBranches[branchName] = true
+				}
 			}
 		}
+	}
+
+	if logger != nil {
+		logger.Logf("[syncBranches] 远程分支数: %d", len(remoteBranches))
 	}
 
 	// 获取所有本地分支名
 	localBranchesOut, err := gitutil.OutputIn(projectDir, "branch", "--format=%(refname:short)")
 	if err != nil {
-		logger.Logf("[syncBranches] 获取本地分支失败: %v", err)
-		return
+		return fmt.Errorf("[syncBranches] 获取本地分支失败: %w", err)
 	}
 
+	var firstErr error
 	if localBranchesOut != "" {
 		for _, lb := range strings.Split(localBranchesOut, "\n") {
 			lb = strings.TrimSpace(lb)
 			if lb == "" {
 				continue
 			}
-			remoteRef := "origin/" + lb
-			if !remoteBranches[remoteRef] {
+			if !remoteBranches[lb] {
 				if lb != currentBranch {
-					logger.Logf("[syncBranches] 删除本地分支: %s - 远程已删除", lb)
-					_ = gitutil.RunIn(projectDir, "branch", "-D", lb)
+					logger.Logf("[syncBranches] 删除本地分支: %s - 远程已不存在", lb)
+					if err := gitutil.RunIn(projectDir, "branch", "-D", lb); err != nil && firstErr == nil {
+						firstErr = fmt.Errorf("删除本地分支 %s 失败: %w", lb, err)
+					}
 				} else {
-					logger.Logf("[syncBranches] 跳过当前分支 %s（远程已删除但保留本地）", lb)
+					logger.Logf("[syncBranches] 跳过当前分支 %s（远程已不存在但保留本地）", lb)
 				}
 			}
 		}
 	}
 
-	// 创建远程有但本地没有的跟踪分支
-	for remoteRef := range remoteBranches {
-		localName := strings.TrimPrefix(remoteRef, "origin/")
-		if localName == remoteRef {
-			continue
-		}
-		out, _ := gitutil.OutputIn(projectDir, "rev-parse", "--verify", "--quiet", "refs/heads/"+localName)
+	// 列出所有远程分支，创建缺失的本地跟踪分支，并强制更新到远程最新
+	for branchName := range remoteBranches {
+		// 检查本地是否存在该分支
+		out, _ := gitutil.OutputIn(projectDir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branchName)
 		if out == "" {
-			logger.Logf("[syncBranches] 创建本地跟踪分支: %s -> %s", localName, remoteRef)
-			_ = gitutil.RunIn(projectDir, "branch", "--track", localName, remoteRef)
+			logger.Logf("[syncBranches] 创建本地跟踪分支: %s -> origin/%s", branchName, branchName)
+			if err := gitutil.RunIn(projectDir, "branch", "--track", branchName, "origin/"+branchName); err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("创建跟踪分支 %s 失败: %w", branchName, err)
+			}
 		}
+		// 强制非当前分支指向远程最新提交
+		if branchName != currentBranch {
+			_ = gitutil.RunIn(projectDir, "branch", "-f", branchName, "origin/"+branchName)
+		}
+		logger.Logf("[syncBranches] 分支 %s 已同步", branchName)
 	}
+
 	logger.Logf("[syncBranches] 分支同步完成")
+	return firstErr
 }
 
 // PullUpdates 根据项目目录是否存在，执行克隆或拉取更新
@@ -415,14 +446,6 @@ func PullUpdates(cfg *Config, logger Logger) error {
 	}
 	logger.Logf("远程 fetch 成功")
 
-	// 2. 同步更新备份仓库（先确保存在）
-	ensureBackupRepo(projectDir, backupDir, logger)
-	if err := gitutil.RunIn(backupDir, "fetch", "--prune", "origin"); err != nil {
-		logger.Logf("备份仓库 fetch 失败（非致命）: %v", err)
-	} else {
-		logger.Logf("备份仓库已同步")
-	}
-
 	// 获取当前分支
 	currentBranch, err := gitutil.OutputIn(projectDir, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
@@ -439,8 +462,25 @@ func PullUpdates(cfg *Config, logger Logger) error {
 		logger.Logf("已重置 %s 到 %s", currentBranch, remoteRef)
 	}
 
-	logger.Logf("正在同步本地跟踪分支...")
-	syncBranches(projectDir, currentBranch, logger)
+	// 2. 同步所有分支（主仓库）
+	logger.Logf("正在同步主仓库的本地跟踪分支...")
+	if err := syncBranches(projectDir, currentBranch, logger); err != nil {
+		return fmt.Errorf("同步主仓库分支失败: %w", err)
+	}
+
+	// 3. 同步更新备份仓库（先确保存在）
+	//    注意：bare repo 的 refspec 是 +refs/heads/*:refs/heads/*
+	//    即远程分支直接映射为本地 refs/heads/*，不存在 origin/xxx 形式的远程跟踪引用
+	//    所以 bare repo 只需要 git fetch --prune origin 即可自动同步所有分支
+	ensureBackupRepo(projectDir, backupDir, logger)
+	// 确保 fetch refspec 存在，否则 git fetch 不会拉取任何 refs/heads/*
+	// （常见于 ensureBackupRepo 从本地 clone 后 remote URL 被修改导致 refspec 丢失）
+	_ = gitutil.RunIn(backupDir, "config", "remote.origin.fetch", "+refs/heads/*:refs/heads/*")
+	if err := gitutil.RunIn(backupDir, "fetch", "--prune", "origin"); err != nil {
+		logger.Logf("备份仓库 fetch 失败（非致命）: %v", err)
+	} else {
+		logger.Logf("备份仓库已同步")
+	}
 
 	logger.Logf("更新完成")
 	if err := EnsureRipgrep(); err != nil {
@@ -459,8 +499,9 @@ func cloneProject(cfg *Config, logger Logger) error {
 	}
 
 	// 1. 克隆到 qingzhu（正常仓库，有工作目录）
+	//    使用 --no-checkout 避免只 checkout 默认分支，后续手动 checkout 所有分支
 	logger.Logf("正在克隆项目到 %s ...", projectDir)
-	cmd := exec.Command(gitExe, "clone", cfg.Git.RemoteURL, projectDir)
+	cmd := exec.Command(gitExe, "clone", "--no-checkout", cfg.Git.RemoteURL, projectDir)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -479,13 +520,61 @@ func cloneProject(cfg *Config, logger Logger) error {
 		return fmt.Errorf("克隆备份仓库失败: %w\n%s", err, string(output))
 	}
 	logger.Logf("备份仓库创建完成")
+	// 确保 fetch refspec 存在（bare clone 默认有，但确保不会丢失）
+	_ = gitutil.RunIn(backupDir, "config", "remote.origin.fetch", "+refs/heads/*:refs/heads/*")
 
-	// 同步远程分支
+	// 3. 同步所有远程分支到主仓库
+	logger.Logf("正在同步所有远程分支...")
+	// 使用 ls-remote 直接从服务器查询所有远程分支
+	lsRemoteOut, err := gitutil.OutputIn(projectDir, "ls-remote", "--heads", cfg.Git.RemoteURL)
+	if err != nil {
+		return fmt.Errorf("查询远程分支列表失败: %w", err)
+	}
+
+	type remoteBranch struct {
+		sha  string
+		name string
+	}
+	var remoteBranches []remoteBranch
+	defaultBranch := "main"
+	if lsRemoteOut != "" {
+		for _, line := range strings.Split(lsRemoteOut, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				ref := parts[1] // refs/heads/<name>
+				name := strings.TrimPrefix(ref, "refs/heads/")
+				if name != "" {
+					remoteBranches = append(remoteBranches, remoteBranch{sha: parts[0], name: name})
+					// 第一个分支作为默认分支
+					if defaultBranch == "main" || defaultBranch == "master" {
+						defaultBranch = name
+					}
+				}
+			}
+		}
+	}
+
+	// 为每个远程分支创建本地跟踪分支
+	for _, rb := range remoteBranches {
+		_ = gitutil.RunIn(projectDir, "branch", "--track", rb.name, "origin/"+rb.name)
+	}
+	// 切换到默认分支
+	_ = gitutil.RunIn(projectDir, "checkout", "--force", defaultBranch)
+
 	currentBranch, _ := gitutil.OutputIn(projectDir, "rev-parse", "--abbrev-ref", "HEAD")
 	currentBranch = strings.TrimSpace(currentBranch)
-	logger.Logf("正在同步远程分支...")
-	syncBranches(projectDir, currentBranch, logger)
+	if err := syncBranches(projectDir, currentBranch, logger); err != nil {
+		logger.Logf("同步主仓库分支警告: %v", err)
+	}
 
+	// 4. 备份仓库是 bare clone，refspec 为 +refs/heads/*:refs/heads/*
+	//    所有远程分支直接映射为本地 refs/heads/*，无需额外同步
+
+	logger.Logf("项目克隆完成，包含全部 %d 个分支", len(remoteBranches))
 	logger.Logf("接下来点击「准备环境」按钮，将会检测系统环境，下载需要的安装包/便携包")
 	return nil
 }

@@ -19,7 +19,7 @@ const ModeDetailPanel = () => {
   const [additionalInfo, setAdditionalInfo] = useState<string[]>([]);
   const [temperature, setTemperature] = useState(0.7);
   const [topP, setTopP] = useState(0.7);
-  const [maxTokens, setMaxTokens] = useState(4096);
+  const [contextRatio, setContextRatio] = useState(0.8);
   const [enabledTools, setEnabledTools] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -34,7 +34,7 @@ const ModeDetailPanel = () => {
       setAdditionalInfo([]);
       setTemperature(0.7);
       setTopP(0.7);
-      setMaxTokens(4096);
+      setContextRatio(0.8);
       setEnabledTools([]);
       return;
     }
@@ -43,14 +43,14 @@ const ModeDetailPanel = () => {
       setAdditionalInfo(currentModeData.additionalInfo || []);
       setTemperature(currentModeData.temperature ?? 0.7);
       setTopP(currentModeData.top_p ?? 0.7);
-      setMaxTokens(currentModeData.max_tokens ?? 4096);
+      setContextRatio(currentModeData.context_ratio ?? 0.8);
       setEnabledTools(currentModeData.tools || []);
     } else {
       setPrompt('');
       setAdditionalInfo([]);
       setTemperature(0.7);
       setTopP(0.7);
-      setMaxTokens(4096);
+      setContextRatio(0.8);
       setEnabledTools([]);
     }
   }, [selectedModeId, currentModeData]);
@@ -109,7 +109,7 @@ const ModeDetailPanel = () => {
       await httpClient.put(`/api/mode/custom-modes/${selectedModeId}`, {
         temperature: temperature,
         top_p: topP,
-        max_tokens: maxTokens || 4096
+        context_ratio: contextRatio
       });
       // 刷新模式列表
       const modesResult = await httpClient.get('/api/mode/modes');
@@ -318,16 +318,25 @@ const ModeDetailPanel = () => {
                   />
                 </div>
 
-                {/* 最大 Tokens，清空内容时为NaN，错误警告是正常的。设置了默认值则无法将输入框清除干净 */}
+                {/* 上下文比例，占模型上下文窗口的百分比 */}
                 <div>
-                  <label className="block text-theme-white text-sm mb-2">最大 Tokens</label>
+                  <label className="block text-theme-white text-sm mb-2">
+                    上下文比例: {Math.round(contextRatio * 100)}%
+                  </label>
                   <input
-                    type="number"
-                    value={maxTokens}
-                    onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                    type="range"
+                    min="0.01"
+                    max="1"
+                    step="0.01"
+                    value={contextRatio}
+                    onChange={(e) => setContextRatio(parseFloat(e.target.value))}
                     onBlur={saveParams}
-                    className="w-full p-2 bg-theme-gray2 text-theme-white border border-theme-gray3 rounded focus:outline-none focus:border-theme-green"
+                    className="w-full accent-theme-green"
                   />
+                  <div className="flex justify-between text-theme-gray4 text-xs mt-1">
+                    <span>1%</span>
+                    <span>100%</span>
+                  </div>
                 </div>
               </div>
             )}

@@ -25,7 +25,7 @@ class UpdateModeRequest(BaseModel):
     prompt: Optional[str] = Field(None, description="提示词")
     temperature: Optional[float] = Field(None, description="温度参数")
     top_p: Optional[float] = Field(None, description="top_p参数")
-    max_tokens: Optional[int] = Field(None, description="最大token数")
+    context_ratio: Optional[float] = Field(None, ge=0.0, le=1.0, description="上下文比例（占模型上下文窗口的百分比，0.0-1.0，默认0.8）")
     additionalInfo: Optional[List[str]] = Field(None, description="额外信息")
     tools: Optional[List[str]] = Field(None, description="工具列表")
 
@@ -81,7 +81,7 @@ async def add_custom_mode(request: AddModeRequest):
         "prompt": "",
         "temperature": 0.7,
         "top_p": 0.7,
-        "max_tokens": 4096,
+        "context_ratio": 0.8,
         "additionalInfo": [],
         "tools": []
     }, "mode", request.name)
@@ -98,7 +98,7 @@ async def update_custom_mode(mode_id: str, request: UpdateModeRequest):
     - **prompt**: 提示词（可选）
     - **temperature**: 温度参数（可选）
     - **top_p**: top_p参数（可选）
-    - **max_tokens**: 最大token数（可选）
+    - **context_ratio**: 上下文比例（可选，0.0-1.0，默认0.8）
     - **additionalInfo**: 额外信息（可选）
     - **tools**: 工具列表（可选）
     """
