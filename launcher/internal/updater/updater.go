@@ -89,8 +89,8 @@ func EnsureVcRedist(projectDir string) error {
 		return fmt.Errorf("未找到 vcredist 目录: %s", srcDir)
 	}
 
-	// 目标目录：exeDir/.venv/Lib/site-packages/chromadb_rust_bindings/
-	dstDir := filepath.Join(getExeDir(), ".venv", "Lib", "site-packages", "chromadb_rust_bindings")
+	// 目标目录：projectDir/.venv/Lib/site-packages/chromadb_rust_bindings/
+	dstDir := filepath.Join(projectDir, ".venv", "Lib", "site-packages", "chromadb_rust_bindings")
 	if _, err := os.Stat(dstDir); os.IsNotExist(err) {
 		return fmt.Errorf("未找到 chromadb_rust_bindings 目录: %s", dstDir)
 	}

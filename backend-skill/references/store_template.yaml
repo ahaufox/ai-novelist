@@ -87,7 +87,7 @@ provider:
   # --------------------
   local:
     name: 内置模型
-    builtin: true                   # 是否内置（区分自定义提供商）
+    fixed: true                     # 是否固定提供商（不可从前端删除）
     enable: true                    # 是否启用（只有启用才能对话，或者在嵌入面板中发现它的可用嵌入模型）
     url: ""                         # API 地址（本地运行时可为空）
     env_key: ""                     # 环境变量名（本地运行时可为空）
@@ -105,7 +105,7 @@ provider:
   # --------------------
   deepseek:
     name: deepseek
-    builtin: true
+    fixed: true
     enable: true
     url: https://api.deepseek.com/v1
     env_key: DEEPSEEK_API_KEY       # 环境变量名，用于读取 API 密钥
@@ -121,7 +121,7 @@ provider:
   # --------------------
   dashscope:
     name: 阿里云
-    builtin: true
+    fixed: true
     enable: false
     url: https://dashscope.aliyuncs.com/compatible-mode/v1
     env_key: DASHSCOPE_API_KEY
@@ -142,7 +142,7 @@ provider:
   # --------------------
   siliconflow:
     name: 硅基流动
-    builtin: true
+    fixed: true
     enable: false
     url: https://api.siliconflow.cn/v1
     env_key: SILICONFLOW_API_KEY
@@ -162,7 +162,7 @@ provider:
   # --------------------
   ollama:
     name: ollama
-    builtin: true
+    fixed: true
     enable: false
     url: http://127.0.0.1:11434
     env_key: OLLAMA_API_KEY
@@ -176,7 +176,7 @@ provider:
   # --------------------
   gemini:
     name: Gemini
-    builtin: true
+    fixed: true
     enable: false
     url: https://generativelanguage.googleapis.com
     env_key: GEMINI_API_KEY

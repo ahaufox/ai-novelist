@@ -16,10 +16,10 @@ const ProviderContextMenu = ({
   const menuItems: ContextMenuItem[] = (() => {
     if (!providerId) return [];
     
-    const isBuiltin = providersData[providerId]?.builtin === true;
+    const isFixed = providersData[providerId]?.fixed === true;
     const items: ContextMenuItem[] = [];
 
-    if (!isBuiltin) {
+    if (!isFixed) {
       items.push({
         label: '重命名',
         onClick: () => onRename(providerId)

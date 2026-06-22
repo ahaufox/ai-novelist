@@ -45,7 +45,7 @@ selectedModel: deepseek-v4-flash
 provider:
   builtin:
     name: 内置提供商
-    enable: true
+    enable: false
     url: https://denghuominghui.top/v1
     favoriteModels:
       chat: {}
@@ -55,7 +55,7 @@ provider:
           max-tokens: 32000
           per-max-tokens: false
       other: {}
-    builtin: true
+    fixed: true
     env_key: BUILTIN_API_KEY
   deepseek:
     name: deepseek
@@ -67,7 +67,7 @@ provider:
         deepseek-v4-pro: 1000000
       embedding: {}
       other: {}
-    builtin: true
+    fixed: true
     env_key: DEEPSEEK_API_KEY
   dashscope:
     name: 阿里云
@@ -91,7 +91,7 @@ provider:
           max-tokens: false
           per-max-tokens: 8192
       other: {}
-    builtin: true
+    fixed: true
     env_key: DASHSCOPE_API_KEY
   siliconflow:
     name: 硅基流动
@@ -115,7 +115,7 @@ provider:
           max-tokens: 32000
           per-max-tokens: false
       other: {}
-    builtin: true
+    fixed: true
     env_key: SILICONFLOW_API_KEY
   openrouter:
     name: OpenRouter
@@ -148,7 +148,7 @@ provider:
           max-tokens: 32000
           per-max-tokens: false
       other: {}
-    builtin: true
+    fixed: true
     env_key: OPENROUTER_API_KEY
   moonshot:
     name: 月之暗面
@@ -160,7 +160,7 @@ provider:
         kimi-k2-0905-preview: 256000
       embedding: {}
       other: {}
-    builtin: true
+    fixed: true
     env_key: MOONSHOT_API_KEY
   zhipuai:
     name: 智谱
@@ -176,7 +176,7 @@ provider:
           max-tokens: 8000
           per-max-tokens: false
       other: {}
-    builtin: true
+    fixed: true
     env_key: ZHIPUAI_API_KEY
   ollama:
     name: ollama
@@ -186,7 +186,7 @@ provider:
       chat: {}
       embedding: {}
       other: {}
-    builtin: true
+    fixed: true
     env_key: OLLAMA_API_KEY
   gemini:
     name: Gemini
@@ -198,7 +198,7 @@ provider:
         gemini-2.5-flash-lite: 1048576
       embedding: {}
       other: {}
-    builtin: true
+    fixed: true
     env_key: GEMINI_API_KEY
   lm_studio:
     name: LM Studio
@@ -212,11 +212,11 @@ provider:
           max-tokens: 12344
           per-max-tokens: false
       other: {}
-    builtin: true
+    fixed: true
     env_key: LM_STUDIO_API_KEY
   openai:
     name: OpenAI
-    builtin: true
+    fixed: true
     enable: false
     url: https://api.openai.com/v1
     env_key: OPENAI_API_KEY

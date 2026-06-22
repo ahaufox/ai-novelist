@@ -192,7 +192,7 @@ async def add_custom_provider(request: AddProviderRequest):
     # 添加新的提供商配置
     settings.update_config({
         "name": request.name,
-        "builtin": False,
+        "fixed": False,
         "enable": False,
         "url": "",
         "env_key": env_key,
@@ -248,9 +248,9 @@ async def update_custom_provider(provider_id: str, request: UpdateProviderReques
     elif "favoriteModels" in provider_config:
         updated_config["favoriteModels"] = provider_config["favoriteModels"]
     
-    # 保留builtin字段
-    if "builtin" in provider_config:
-        updated_config["builtin"] = provider_config["builtin"]
+    # 保留fixed字段
+    if "fixed" in provider_config:
+        updated_config["fixed"] = provider_config["fixed"]
     
     # 保留env_key字段
     if "env_key" in provider_config:
