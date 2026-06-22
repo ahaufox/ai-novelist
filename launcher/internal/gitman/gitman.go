@@ -415,6 +415,14 @@ type NodeData struct {
 	Color   string `json:"color"`
 }
 
+// DualGraphOutput 双仓库分支图输出
+// Graph: 基准仓库的完整 graph（用于渲染）
+// WorkingHead: 可变仓库当前 HEAD SHA（用于在图上标记位置）
+type DualGraphOutput struct {
+	Graph       *GraphOutput `json:"graph"`
+	WorkingHead string       `json:"working_head"`
+}
+
 // SegData 一条线段（竖线、fork 或 merge）
 type SegData struct {
 	FromLane int    `json:"from_lane"`
@@ -648,4 +656,21 @@ func GetStructuredGraph(projectDir string, maxCount int) (*GraphOutput, error) {
 		Nodes:    nodes,
 		Segments: segments,
 	}, nil
+}
+
+// IsCommitReachable 检查指定 commit SHA 在当前仓库的对象库中是否存在
+func IsCommitReachable(projectDir string, sha string) (bool, error) {
+	err := gitutil.RunIn(projectDir, "cat-file", "-e", sha)
+	return err == nil, nil
+}
+
+// GetHeadSHA 获取当前 HEAD 的完整 SHA
+func GetHeadSHA(projectDir string) (string, error) {
+	out, err := gitutil.OutputIn(projectDir, "rev-parse", "HEAD")
+	return strings.TrimSpace(out), err
+}
+
+// FetchFromRepo 从源仓库 fetch 到目标仓库
+func FetchFromRepo(destDir, srcDir string) error {
+	return gitutil.RunIn(destDir, "fetch", "--prune", srcDir)
 }

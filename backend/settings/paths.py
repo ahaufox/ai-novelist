@@ -1,58 +1,53 @@
 """
-路径配置模块,确保开发环境，生产环境都能正确找到位置
+路径配置模块
+
+所有路径由启动器通过环境变量传入，后端直接读取，不自行计算。
 """
-import logging
+
 import os
-import sys
 from pathlib import Path
 
 
-def get_data_dir():
-    """获取数据目录路径"""
-    if getattr(sys, 'frozen', False):
-        # PyInstaller 打包后，数据放在 exe 同级目录的 data/ 文件夹
-        # 使用 sys.executable 获取 exe 所在目录
-        exe_dir = Path(sys.executable).parent
-        return exe_dir / 'data'
-    else:
-        # 开发环境，data 放在项目根目录
-        return Path(__file__).parent.parent.parent / 'data'
+# ===== 环境变量名称常量 =====
+ENV_PROJECT_DIR  = "AI_NOVELIST_PROJECT_DIR"
+ENV_DATA_DIR     = "AI_NOVELIST_DATA_DIR"
+ENV_BIN_DIR      = "AI_NOVELIST_BIN_DIR"
+ENV_ENV_FILE     = "AI_NOVELIST_ENV_FILE"
+ENV_CONFIG_DIR   = "AI_NOVELIST_CONFIG_DIR"
+ENV_DB_DIR       = "AI_NOVELIST_DB_DIR"
+ENV_CHROMADB_DIR = "AI_NOVELIST_CHROMADB_DIR"
+ENV_UPLOADS_DIR  = "AI_NOVELIST_UPLOADS_DIR"
+ENV_TEMP_DIR     = "AI_NOVELIST_TEMP_DIR"
+ENV_SKILLS_DIR   = "AI_NOVELIST_SKILLS_DIR"
+ENV_AUTH_DIR     = "AI_NOVELIST_AUTH_DIR"
+ENV_STATIC_DIR   = "AI_NOVELIST_STATIC_DIR"
+ENV_DB_DIR       = "AI_NOVELIST_DB_DIR"
+ENV_CHROMADB_DIR = "AI_NOVELIST_CHROMADB_DIR"
+ENV_UPLOADS_DIR  = "AI_NOVELIST_UPLOADS_DIR"
+ENV_TEMP_DIR     = "AI_NOVELIST_TEMP_DIR"
+ENV_SKILLS_DIR   = "AI_NOVELIST_SKILLS_DIR"
+ENV_AUTH_DIR     = "AI_NOVELIST_AUTH_DIR"
+
+# 具体文件
+ENV_CONVERSATIONS_DB = "AI_NOVELIST_CONVERSATIONS_DB"
+ENV_AUTH_TOKEN_FILE  = "AI_NOVELIST_AUTH_TOKEN_FILE"
+
+# 可执行文件
+ENV_GIT_EXECUTABLE  = "AI_NOVELIST_GIT_EXECUTABLE"
+ENV_NODE_EXECUTABLE = "AI_NOVELIST_NODE_EXECUTABLE"
+ENV_NPM_EXECUTABLE  = "AI_NOVELIST_NPM_EXECUTABLE"
+ENV_RG_EXECUTABLE   = "AI_NOVELIST_RG_EXECUTABLE"
+
+# 依赖目录
+ENV_VENV_DIR    = "AI_NOVELIST_VENV_DIR"
+ENV_MODULES_DIR = "AI_NOVELIST_MODULES_DIR"
 
 
-def get_bin_dir():
-    """获取可执行文件目录路径
-
-    优先级：
-    1. 环境变量 AI_NOVELIST_TOOLS_DIR（由启动器传入）
-    2. 项目根目录下的 bin/（旧版本布局，兼容直接运行）
-    """
-    # 优先级1：启动器传入的环境变量
-    tools_dir = os.environ.get("AI_NOVELIST_TOOLS_DIR")
-    if tools_dir:
-        return Path(tools_dir)
-
-    # 优先级2：项目根目录下的 bin/（兼容旧版本 / 直接运行）
-    project_root = Path(__file__).parent.parent.parent  # backend/settings/ -> 项目根目录
-    bin_dir = project_root / 'bin'
-    if bin_dir.exists():
-        return bin_dir
-
-    # 冻结模式（PyInstaller）：exe 同级目录下的 bin/
-    if getattr(sys, 'frozen', False):
-        exe_dir = Path(sys.executable).parent
-        frozen_bin = exe_dir / 'bin'
-        if frozen_bin.exists():
-            return frozen_bin
-
-    # 都找不到时，返回项目根目录下的 bin/（即使不存在，让调用方自行处理）
-    logger = logging.getLogger(__name__)
-    logger.warning("AI_NOVELIST_TOOLS_DIR 未设置，也未找到 bin/ 目录，将使用系统命令回退")
-    return project_root / 'bin'
-
-
-def get_env_file_path() -> Path:
-    """获取环境变量文件路径"""
-    if getattr(sys, 'frozen', False):
-        return Path(os.path.dirname(sys.executable)) / ".env"
-    else:
-        return Path(__file__).parent.parent.parent / ".env"
+def get_env_or_raise(key: str) -> str:
+    """从环境变量读取，不存在则抛出异常"""
+    value = os.environ.get(key)
+    if value is None:
+        raise RuntimeError(
+            f"缺少必需的环境变量 {key}，请通过启动器启动应用"
+        )
+    return value

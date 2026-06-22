@@ -191,13 +191,6 @@ export interface ProviderState {
   selectedModelId: string | null;
 }
 
-// ==================== Terminal Store ====================
-
-/** 终端状态 */
-export interface TerminalState {
-  isVisible: boolean;
-}
-
 // ==================== Root State ====================
 
 import type { store } from '../store/store';

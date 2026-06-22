@@ -7,28 +7,17 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"launcher/internal/env"
 )
 
-// GetGitExe 返回便携 git 可执行文件路径
+// GetGitExe 返回便携 git 可执行文件路径（exeDir 级 bin/git/bin/git.exe）
 func GetGitExe() (string, error) {
-	toolsDir, err := getToolsDir()
-	if err != nil {
-		return "", err
-	}
-	gitExe := filepath.Join(toolsDir, "git", "bin", "git.exe")
+	gitExe := filepath.Join(env.GetBinDir(), "git", "bin", "git.exe")
 	if _, err := os.Stat(gitExe); os.IsNotExist(err) {
 		return "", fmt.Errorf("git 未安装，请先点击「准备环境」: %s", gitExe)
 	}
 	return gitExe, nil
-}
-
-// getToolsDir 获取 tools 目录路径
-func getToolsDir() (string, error) {
-	exePath, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("获取启动器路径失败: %w", err)
-	}
-	return filepath.Join(filepath.Dir(exePath), "tools"), nil
 }
 
 // ExecIn 创建一个在指定目录执行的 git 命令

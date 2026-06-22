@@ -1,7 +1,6 @@
 import { app } from 'electron';
 import { backendManager } from './managers/backendManager.js';
 import { windowManager } from './managers/windowManager.js';
-import { terminalManager } from './managers/terminalManager.js';
 import { APP_CONFIG } from './utils/constants.js';
 
 // 应用启动
@@ -28,11 +27,9 @@ app.whenReady().then(async () => {
 // 应用退出时清理
 app.on('window-all-closed', async () => {
   await backendManager.stop();
-  terminalManager.killAllTerminals();
   app.quit();
 });
 
 app.on('before-quit', async () => {
   await backendManager.stop();
-  terminalManager.killAllTerminals();
 });

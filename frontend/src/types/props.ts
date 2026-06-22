@@ -5,7 +5,7 @@
  */
 
 import type { ChapterItem } from './store';
-import type { ContextMenuItem, ModalCallbacks, FileChangeInfo, FileTreeNode, TerminalItem, TerminalSession, Checkpoint, FileChange, GitStatus, ModelInfo, ThemeConfig, UploadProgressRef } from './components';
+import type { ContextMenuItem, ModalCallbacks, FileChangeInfo, FileTreeNode, Checkpoint, FileChange, GitStatus, ModelInfo, ThemeConfig, UploadProgressRef } from './components';
 
 // ==================== Layout / 布局组件 ====================
 
@@ -382,8 +382,6 @@ export interface TopActionBarProps {
   leftPanelContent: 'chapter' | 'search' | 'checkpoint';
   onToggleCollapse: () => void;
   onLeftPanelContentChange: (content: 'chapter' | 'search' | 'checkpoint') => void;
-  isTerminalVisible?: boolean;
-  onToggleTerminal?: () => void;
 }
 
 export interface StatusLogoProps {

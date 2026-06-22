@@ -46,10 +46,6 @@ class WindowManager {
     }
 
     this.mainWindow.on('closed', () => {
-      // 清理所有终端进程
-      import('./terminalManager.js').then(({ terminalManager }) => {
-        terminalManager.killAllTerminals();
-      });
       this.mainWindow = null;
     });
 

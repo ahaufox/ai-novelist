@@ -9,7 +9,6 @@ export interface WebviewTab {
 
 export interface LauncherState {
   logs: string[];
-  version: string;
   updateStatus: updater.UpdateStatus | null;
   checkingUpdate: boolean;
   updating: boolean;
@@ -22,7 +21,6 @@ export interface LauncherState {
 
 const initialState: LauncherState = {
   logs: [],
-  version: '',
   updateStatus: null,
   checkingUpdate: false,
   updating: false,
@@ -42,9 +40,6 @@ export const launcherSlice = createSlice({
     },
     setLogs: (state: Draft<LauncherState>, action: PayloadAction<string[]>) => {
       state.logs = action.payload;
-    },
-    setVersion: (state: Draft<LauncherState>, action: PayloadAction<string>) => {
-      state.version = action.payload;
     },
     setUpdateStatus: (state: Draft<LauncherState>, action: PayloadAction<updater.UpdateStatus | null>) => {
       state.updateStatus = action.payload;
@@ -85,7 +80,6 @@ export const launcherSlice = createSlice({
 export const {
   addLog,
   setLogs,
-  setVersion,
   setUpdateStatus,
   setCheckingUpdate,
   setUpdating,

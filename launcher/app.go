@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -40,6 +41,27 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.Logf("[DEBUG] App startup 被调用")
+
+	// 加载配置
+	config, err := a.LoadConfig()
+	if err != nil {
+		a.Logf("[WARN] 加载配置失败: %v", err)
+		return
+	}
+	projectDir := updater.GetProjectDir(config)
+	exeDir := filepath.Dir(projectDir)
+
+	// 确保 .env 存在并包含所有必需环境变量，加载到进程环境
+	envVars, err := env.EnsureDotenv(exeDir, projectDir)
+	if err != nil {
+		a.Logf("[WARN] 初始化环境变量失败: %v", err)
+	} else {
+		// 加载到当前进程环境（子进程自动继承）
+		for k, v := range envVars {
+			os.Setenv(k, v)
+		}
+		a.Logf("[INFO] 环境变量已就绪，共 %d 个", len(envVars))
+	}
 }
 
 // StartGitServer 启动Git HTTP服务
@@ -130,36 +152,23 @@ func (a *App) GetVersion() string {
 	return local.SHA
 }
 
-func (a *App) CheckUpdate() (*updater.UpdateStatus, error) {
+// SyncProject 同步项目：克隆（首次）或拉取最新 + 备份仓库
+// 合并了原先的 CheckUpdate + PerformUpdate 两个流程
+func (a *App) SyncProject() (*updater.UpdateStatus, error) {
 	if a.config == nil {
 		return nil, fmt.Errorf("配置未加载")
 	}
-	// 先确保 git 已安装
 	if err := updater.EnsureGit(a); err != nil {
 		return nil, fmt.Errorf("准备 Git 失败: %w", err)
 	}
-	updater.SyncBranchesFromRemote(a.config, a)
+	if err := updater.PullUpdates(a.config, a); err != nil {
+		return nil, err
+	}
 	return updater.CheckUpdateStatus(a.config, a)
 }
 
-func (a *App) PerformUpdate() error {
-	if a.config == nil {
-		return fmt.Errorf("配置未加载")
-	}
-	// 先确保 git 已安装
-	if err := updater.EnsureGit(a); err != nil {
-		return fmt.Errorf("准备 Git 失败: %w", err)
-	}
-	return updater.PullUpdates(a.config, a)
-}
-
 func (a *App) PrepareEnvironment() error {
-	if a.config == nil {
-		return fmt.Errorf("配置未加载")
-	}
-
-	projectDir := a.getProjectDir()
-	return launcher.PrepareEnvironment(projectDir, a)
+	return launcher.PrepareEnvironment(a)
 }
 
 // ─── 后端控制 ───
@@ -184,12 +193,15 @@ func (a *App) BackendStart() error {
 
 	// 运行配置迁移（创建/补全 store.yaml、skills.yaml 等配置文件）
 	a.Logf("=== 检查配置迁移 ===")
-	if err := migration.RunAll(projectDir); err != nil {
+	exeDir := filepath.Dir(projectDir)
+	dataDir := filepath.Join(exeDir, "data")
+	configDir := filepath.Join(dataDir, "config")
+	if err := migration.RunAll(projectDir, dataDir, configDir); err != nil {
 		return fmt.Errorf("配置迁移失败: %w", err)
 	}
 
-	// 检测 Python
-	pythonPath, ok := env.DetectVenvPython(projectDir)
+	// 检测 Python（exeDir 级的 .venv）
+	pythonPath, ok := env.DetectVenvPython()
 	if !ok {
 		a.Logf("未找到虚拟环境，检测系统 Python...")
 		check := env.CheckSystemPython()
@@ -198,7 +210,7 @@ func (a *App) BackendStart() error {
 			if err != nil {
 				return fmt.Errorf("获取系统 Python 真实路径失败: %w", err)
 			}
-			pythonPath, err = env.EnsureVenv(projectDir, realPythonPath, a)
+			pythonPath, err = env.EnsureVenv(realPythonPath, a)
 			if err != nil {
 				return fmt.Errorf("创建虚拟环境失败: %w", err)
 			}
@@ -228,9 +240,12 @@ func (a *App) BackendStart() error {
 		return fmt.Errorf("启动后端失败: %w", err)
 	}
 
+	// 从环境变量读取后端端口（EnsureDotenv 已确保存在）
+	backendPort, _ := strconv.Atoi(os.Getenv("AI_NOVELIST_BACKEND_PORT"))
+
 	// 等待后端就绪
 	a.Logf("=== 等待后端就绪 ===")
-	if err := backend.WaitForHealthy(8000, 60*time.Second); err != nil {
+	if err := backend.WaitForHealthy(backendPort, 60*time.Second); err != nil {
 		killProcessTree(cmd.Process.Pid)
 		return fmt.Errorf("后端健康检查失败: %w", err)
 	}
@@ -279,8 +294,8 @@ func (a *App) FrontendStart() error {
 		return fmt.Errorf("项目目录未设置")
 	}
 
-	// 检测 Node.js
-	nodePath, ok := env.DetectNode(projectDir)
+	// 检测 Node.js（exeDir 级的 bin/node/）
+	nodePath, ok := env.DetectNode()
 	if !ok {
 		return fmt.Errorf("Node.js 环境未就绪，请先点击「准备环境」")
 	}
@@ -449,6 +464,60 @@ func (a *App) GitStructuredGraph(maxCount int) (*gitman.GraphOutput, error) {
 func (a *App) GitAllCommits(maxCount int) ([]gitman.CommitDetail, error) {
 	projectDir := a.getProjectDir()
 	return gitman.GetAllCommitDetails(projectDir, maxCount)
+}
+
+// GitDualGraph 获取基准仓库完整图 + 可变仓库 HEAD 位置
+func (a *App) GitDualGraph(maxCount int) (*gitman.DualGraphOutput, error) {
+	projectDir := a.getProjectDir()
+	backupDir := updater.GetBackupDir()
+
+	// 检查备份仓库是否存在
+	if _, err := os.Stat(filepath.Join(backupDir, "HEAD")); os.IsNotExist(err) {
+		return nil, fmt.Errorf("备份仓库不存在，请先点击「检查更新」同步项目")
+	}
+
+	graph, err := gitman.GetStructuredGraph(backupDir, maxCount)
+	if err != nil {
+		return nil, fmt.Errorf("获取基准分支图失败: %w", err)
+	}
+
+	workingHead, err := gitman.GetHeadSHA(projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("获取当前版本失败: %w", err)
+	}
+
+	return &gitman.DualGraphOutput{
+		Graph:       graph,
+		WorkingHead: workingHead,
+	}, nil
+}
+
+// GitDualCheckout 智能回档 + 返回新的双仓库图
+func (a *App) GitDualCheckout(sha string, maxCount int) (*gitman.DualGraphOutput, error) {
+	projectDir := a.getProjectDir()
+	backupDir := updater.GetBackupDir()
+
+	// 检查目标 commit 是否在可变仓库中可达
+	reachable, _ := gitman.IsCommitReachable(projectDir, sha)
+
+	if !reachable {
+		// 往后回档 — 先从 backup fetch 到 qingzhu
+		a.Logf("目标提交在可变仓库中不可达，从备份仓库同步...")
+		if err := gitman.FetchFromRepo(projectDir, backupDir); err != nil {
+			return nil, fmt.Errorf("从备份仓库同步失败: %w", err)
+		}
+		a.Logf("备份仓库同步完成")
+	}
+
+	// 执行 reset --hard
+	if err := gitman.CheckoutCommit(projectDir, sha); err != nil {
+		return nil, fmt.Errorf("回档失败: %w", err)
+	}
+
+	a.Logf("已回档到 %s", sha[:7])
+
+	// 返回更新后的图
+	return a.GitDualGraph(maxCount)
 }
 
 // OpenWebviewTab 打开一个 Webview 标签页，显示指定 URL

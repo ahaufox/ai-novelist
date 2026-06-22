@@ -1,5 +1,5 @@
-// API 基础配置
-const API_BASE_URL = 'http://localhost:8000';
+// API 基础配置 — 由启动器通过环境变量注入（VITE_ 前缀使 Vite 暴露给浏览器）
+const API_BASE_URL = import.meta.env.VITE_AI_NOVELIST_BACKEND_URL || 'http://localhost:8000';
 
 // 通用的 fetch 封装函数
 const httpClient = {

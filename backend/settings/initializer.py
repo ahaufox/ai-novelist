@@ -59,10 +59,8 @@ def _initialize_git(base_dir: Path):
 
 def initialize_directories_and_files():
     """
-    初始化data目录下的所有目录和文件
-    1. 确保 data 下所有一级目录存在
-    2. 确保 .env 文件存在
-    3. 初始化 Git 仓库
+    初始化 data 目录下的所有目录和文件
+    路径直接从 settings 读取（已由环境变量传入）
     """
     base_dir = Path(settings.DATA_DIR)
     config_dir = Path(settings.CONFIG_DIR)
@@ -84,5 +82,5 @@ def initialize_directories_and_files():
         env_file.write_text("", encoding='utf-8')
         logger.info(f"创建 .env 文件: {env_file}")
 
-    # 初始化Git仓库和相关配置文件
+    # 初始化Git仓库（在 DATA_DIR 中）
     _initialize_git(base_dir)

@@ -83,23 +83,6 @@ export interface DragState {
   dropPosition: 'before' | 'after' | 'inside' | null;
 }
 
-// ==================== 终端相关 ====================
-
-/** 终端项 */
-export interface TerminalItem {
-  id: string;
-  name: string;
-  isActive?: boolean;
-}
-
-/** 终端会话 */
-export interface TerminalSession {
-  id: string;
-  name: string;
-  output: string[];
-  isRunning: boolean;
-}
-
 // ==================== Checkpoint/版本控制相关 ====================
 
 /** Checkpoint 信息 */

@@ -31,8 +31,6 @@ export type {
   FavoriteModels,
   ProviderData,
   ProviderState,
-  // Terminal
-  TerminalState,
   // Root
   RootState,
   AppDispatch,
@@ -115,8 +113,6 @@ export type {
   FileChangeInfo,
   FileTreeNode,
   DragState,
-  TerminalItem,
-  TerminalSession,
   Checkpoint,
   FileChange,
   GitStatus,

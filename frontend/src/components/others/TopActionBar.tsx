@@ -1,16 +1,14 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faList, faSave, faTerminal } from '@fortawesome/free-solid-svg-icons';
+import { faSearch, faList, faSave } from '@fortawesome/free-solid-svg-icons';
 import StatusLogo from './StatusLogo';
 import WindowControls from './WindowControls';
 import type { TopActionBarProps } from '@/types';
 
-function TopActionBar({ 
-  isLeftPanelCollapsed, 
-  leftPanelContent, 
-  onToggleCollapse, 
+function TopActionBar({
+  isLeftPanelCollapsed,
+  leftPanelContent,
+  onToggleCollapse,
   onLeftPanelContentChange,
-  isTerminalVisible = false,
-  onToggleTerminal
 }: TopActionBarProps) {
   return (
     <div className="h-[3%] bg-theme-black flex items-center justify-between px-0 select-none window-drag-region border-b border-theme-gray2">
@@ -47,24 +45,6 @@ function TopActionBar({
               <FontAwesomeIcon icon={faSave} className="text-sm" />
             </button>
           </div>
-        )}
-      </div>
-      
-      {/* 中间：终端切换按钮 */}
-      <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' } as any}>
-        {onToggleTerminal && (
-          <button
-            onClick={onToggleTerminal}
-            className={`px-3 py-1 rounded text-xs flex items-center gap-1 transition-colors ${
-              isTerminalVisible 
-                ? 'bg-theme-green text-theme-black' 
-                : 'text-theme-gray5 hover:text-theme-white hover:bg-theme-gray2'
-            }`}
-            title="切换终端 (Ctrl+`)"
-          >
-            <FontAwesomeIcon icon={faTerminal} />
-            <span>终端</span>
-          </button>
         )}
       </div>
       

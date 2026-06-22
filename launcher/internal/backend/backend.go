@@ -3,8 +3,6 @@ package backend
 import (
 	"bufio"
 	"fmt"
-	"launcher/internal/env"
-	"launcher/internal/updater"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,7 +22,7 @@ func PipInstall(projectPath, pythonPath string, logger Logger) error {
 	}
 
 	logger.Logf("正在安装后端依赖（可能需要几分钟）...")
-	installArgs := []string{"-m", "pip", "install", "-r", reqFile, "-i", updater.PipMirror}
+	installArgs := []string{"-m", "pip", "install", "-r", reqFile, "-i", "https://mirrors.aliyun.com/pypi/simple/"}
 	cmd := exec.Command(pythonPath, installArgs...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
@@ -63,11 +61,13 @@ func Start(projectPath, pythonPath string, logger Logger) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("main.py 不存在: %s", mainPy)
 	}
 
-	toolsDir := env.GetToolsDir()
 	cmd := exec.Command(pythonPath, mainPy)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Dir = projectPath
-	cmd.Env = append(os.Environ(), "AI_NOVELIST_TOOLS_DIR="+toolsDir)
+
+	// ★ 环境变量已由 startup() 通过 EnsureDotenv + os.Setenv 加载到进程环境
+	// 子进程自动继承所有环境变量
+	cmd.Env = os.Environ()
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

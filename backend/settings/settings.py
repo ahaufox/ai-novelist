@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import sqlite3
@@ -7,7 +6,14 @@ from typing import Dict, Any, TypedDict, Optional
 
 import yaml
 
-from backend.settings.paths import get_data_dir, get_bin_dir, get_env_file_path
+from backend.settings.paths import get_env_or_raise
+from backend.settings.paths import (
+    ENV_DATA_DIR, ENV_CONFIG_DIR, ENV_DB_DIR, ENV_CHROMADB_DIR,
+    ENV_UPLOADS_DIR, ENV_TEMP_DIR, ENV_SKILLS_DIR, ENV_AUTH_DIR,
+    ENV_CONVERSATIONS_DB, ENV_AUTH_TOKEN_FILE, ENV_ENV_FILE,
+    ENV_GIT_EXECUTABLE, ENV_NODE_EXECUTABLE, ENV_NPM_EXECUTABLE, ENV_RG_EXECUTABLE,
+    ENV_STATIC_DIR,
+)
 from backend.settings.env import EnvManager
 from backend.settings.tools import ALL_AVAILABLE_TOOLS
 
@@ -17,79 +23,45 @@ logger = logging.getLogger(__name__)
 class Settings:
     """
     统一配置系统
+    
+    所有路径由启动器通过环境变量传入，此处直接读取。
+    应用配置（store.yaml）通过 get_config/update_config 操作。
     """
     ALL_AVAILABLE_TOOLS: dict = ALL_AVAILABLE_TOOLS
     
     def __init__(self):
-        # 先初始化路径
-        self.DATA_DIR: str = str(get_data_dir())
-        self.ENV_FILE_PATH: Path = get_env_file_path()
+        # ===== 所有路径从环境变量读取，零计算 =====
+        self.DATA_DIR: str = get_env_or_raise(ENV_DATA_DIR)
+        self.CONFIG_DIR: str = get_env_or_raise(ENV_CONFIG_DIR)
+        self.CHROMADB_PERSIST_DIR: str = get_env_or_raise(ENV_CHROMADB_DIR)
+        self.DB_DIR: str = get_env_or_raise(ENV_DB_DIR)
+        self.UPLOADS_DIR: str = get_env_or_raise(ENV_UPLOADS_DIR)
+        self.TEMP_DIR: str = get_env_or_raise(ENV_TEMP_DIR)
+        self.SKILLS_DIR: str = get_env_or_raise(ENV_SKILLS_DIR)
+        self.AUTH_TOKEN_DIR: Path = Path(get_env_or_raise(ENV_AUTH_DIR))
+        self.AUTH_TOKEN_FILE: Path = Path(get_env_or_raise(ENV_AUTH_TOKEN_FILE))
+        self.ENV_FILE_PATH: Path = Path(get_env_or_raise(ENV_ENV_FILE))
+        self.CONVERSATIONS_DB_PATH: str = get_env_or_raise(ENV_CONVERSATIONS_DB)
         
-        # 配置文件目录
-        self.CONFIG_DIR = str(Path(self.DATA_DIR) / "config")
+        # ===== 可执行文件路径 =====
+        self.NODE_EXECUTABLE: str = get_env_or_raise(ENV_NODE_EXECUTABLE)
+        self.NPM_EXECUTABLE: str = get_env_or_raise(ENV_NPM_EXECUTABLE)
+        self.RG_EXECUTABLE: str = get_env_or_raise(ENV_RG_EXECUTABLE)
+        self.GIT_EXECUTABLE: str = get_env_or_raise(ENV_GIT_EXECUTABLE)
         
-        # 向量数据库目录
-        self.CHROMADB_PERSIST_DIR: str = str(Path(self.DATA_DIR) / "chromadb")
-        # SQLite数据库配置
-        self.DB_DIR: str = str(Path(self.DATA_DIR) / "db")
-        self.CHECKPOINTS_DB_PATH: str = str(Path(self.DATA_DIR) / "db" / "checkpoints.db")
-        # 对话存储数据库（新，独立于 langgraph checkpoint）
-        self.CONVERSATIONS_DB_PATH: str = str(Path(self.DATA_DIR) / "db" / "conversations.db")
-        # 上传文件目录
-        self.UPLOADS_DIR: str = str(Path(self.DATA_DIR) / "uploads")
-        # 临时文件目录
-        self.TEMP_DIR: str = str(Path(self.DATA_DIR) / "temp")
-        # Skills目录
-        self.SKILLS_DIR: str = str(Path(self.DATA_DIR) / "skills")
-        # 认证 token 目录
-        self.AUTH_TOKEN_DIR: Path = Path(self.DATA_DIR) / "auth"
-        self.AUTH_TOKEN_FILE: Path = self.AUTH_TOKEN_DIR / "tokens.json"
-        
-        # 先初始化环境变量管理器（加载 .env 到 os.environ，使后续操作能读取到）
+        # ===== 环境变量管理器（加载 .env 中的 API Keys） =====
         self.env_manager = EnvManager(self.ENV_FILE_PATH)
         
-        # 可执行文件路径（可能在 .env 中设置了 AI_NOVELIST_TOOLS_DIR）
-        self.NODE_EXECUTABLE: str = self._get_executable('node.exe')
-        self.NPM_EXECUTABLE: str = self._get_executable('npm.cmd')
-        self.RG_EXECUTABLE: str = self._get_executable('rg.exe')
-        self.GIT_EXECUTABLE: str = self._get_executable('git.exe')
-        
-        # 加载应用配置（必须在路径初始化之后）
+        # ===== 静态文件目录 =====
+        self.STATIC_DIR: str = get_env_or_raise(ENV_STATIC_DIR)
+
+        # ===== 端口配置（从环境变量读取，启动器管理） =====
+        self.HOST: str = "127.0.0.1"
+        self.PORT: int = int(os.environ.get("AI_NOVELIST_BACKEND_PORT", "8000"))
+
+        # ===== 应用配置（从 store.yaml 读取） =====
         self.LOG_LEVEL: str = self.get_config("log_level", default="INFO")
-        self.HOST: str = self.get_config("host", default="127.0.0.1")
-        self.PORT: int = self.get_config("port", default=8000)
     
-    def _get_executable(self, exe_name: str) -> str:
-        """获取工具目录中的可执行文件路径，如果不存在则使用系统命令
-        
-        Args:
-            exe_name: 可执行文件名（如 'uv.exe' 或 'node.exe'）
-        
-        Returns:
-            str: 可执行文件的完整路径或系统命令名
-        """
-        tools_dir = get_bin_dir()
-        # Node.js 在 tools/node/ 子目录下
-        if exe_name in ('node.exe', 'npm.cmd', 'npx.cmd'):
-            exe_path = tools_dir / 'node' / exe_name
-            if exe_path.exists():
-                logger.info(f"使用项目自带的 {exe_name}: {exe_path}")
-                return str(exe_path)
-        # Git 在 tools/git/bin/ 子目录下
-        if exe_name == 'git.exe':
-            exe_path = tools_dir / 'git' / 'bin' / exe_name
-            if exe_path.exists():
-                logger.info(f"使用项目自带的 {exe_name}: {exe_path}")
-                return str(exe_path)
-        exe_path = tools_dir / exe_name
-        if exe_path.exists():
-            logger.info(f"使用项目自带的 {exe_name}: {exe_path}")
-            return str(exe_path)
-        # 如果项目自带的不存在，回退到系统命令
-        cmd_name = exe_name.replace('.exe', '').replace('.cmd', '')
-        logger.info(f"使用系统 {cmd_name}")
-        return cmd_name
-        
     def _load_config(self, config_file: str = "store.yaml") -> Dict[str, Any]:
         """加载配置，每次都会创建全新的字典对象
         
@@ -116,7 +88,6 @@ class Settings:
         current = config
         
         try:
-            # 遍历所有键
             for key in keys:
                 current = current[key]
             return current
@@ -135,16 +106,13 @@ class Settings:
             config = self._load_config(config_file)
             current = config
             
-            # 遍历到最后一层的前一个
             for key in keys[:-1]:
                 if key not in current:
                     current[key] = {}
                 current = current[key]
-                
-            # 设置最后一层的值
+            
             current[keys[-1]] = value
             
-            # 保存配置
             config_path = Path(self.CONFIG_DIR) / config_file
             with open(config_path, 'w', encoding='utf-8') as f:
                 yaml.dump(config, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
@@ -167,17 +135,14 @@ class Settings:
             config = self._load_config(config_file)
             current = config
             
-            # 遍历到最后一层的前一个
             for key in keys[:-1]:
                 if key not in current:
                     return False
                 current = current[key]
             
-            # 删除最后一层的键
             if keys[-1] in current:
                 del current[keys[-1]]
                 
-                # 保存配置
                 config_path = Path(self.CONFIG_DIR) / config_file
                 with open(config_path, 'w', encoding='utf-8') as f:
                     yaml.dump(config, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
@@ -203,7 +168,6 @@ class Settings:
         data = {"access_token": access_token}
         if refresh_token:
             data["refresh_token"] = refresh_token
-        # 写入临时文件后原子重命名，避免写一半崩溃导致文件损坏
         tmp = self.AUTH_TOKEN_FILE.with_suffix(".tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f)
@@ -240,14 +204,11 @@ class Settings:
     # ==================== Provider Key 获取 ====================
 
     def get_provider_key(self, provider: str) -> Optional[str]:
-        # 内置提供商特殊处理：使用 JWT access_token 作为 api_key
         if provider == "builtin":
             return self.get_access_token()
 
-        # 从配置中获取 env_key
         env_key = self.get_config("provider", provider, "env_key", default=None)
         if not env_key:
-            # 如果没有配置 env_key，使用默认格式
             env_key = f"{provider.upper()}_API_KEY"
         
         return self.get_api_key_from_env(env_key)
@@ -255,10 +216,3 @@ class Settings:
 
 # 创建全局设置实例
 settings = Settings()
-
-
-def get_db_connection():
-    """获取数据库连接，用于直接查询数据库（如 history_api.py）"""
-    conn = sqlite3.connect(settings.CHECKPOINTS_DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row  # 返回字典格式
-    return conn

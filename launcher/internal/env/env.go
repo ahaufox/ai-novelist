@@ -22,26 +22,23 @@ type Logger interface {
 	Progress(percent int)
 }
 
-func GetToolsDir() string {
-	exePath, err := os.Executable()
-	if err != nil {
-		return filepath.Join(".", "tools")
-	}
-	return filepath.Join(filepath.Dir(exePath), "tools")
+// GetBinDir 获取工具链目录（exe同级/bin/）
+func GetBinDir() string {
+	return filepath.Join(GetExeDir(), "bin")
 }
 
-// DetectVenvPython 检测 .venv 中的 Python
-func DetectVenvPython(baseDir string) (string, bool) {
-	p := filepath.Join(baseDir, ".venv", "Scripts", "python.exe")
+// DetectVenvPython 检测 .venv 中的 Python（exeDir 级）
+func DetectVenvPython() (string, bool) {
+	p := filepath.Join(GetExeDir(), ".venv", "Scripts", "python.exe")
 	if _, err := os.Stat(p); err == nil {
 		return p, true
 	}
 	return "", false
 }
 
-// DetectNode 检测便携版 Node.js
-func DetectNode(baseDir string) (string, bool) {
-	p := filepath.Join(GetToolsDir(), "node", "node.exe")
+// DetectNode 检测便携版 Node.js（exe同级/bin/node/）
+func DetectNode() (string, bool) {
+	p := filepath.Join(GetBinDir(), "node", "node.exe")
 	if _, err := os.Stat(p); err == nil {
 		return p, true
 	}
@@ -127,7 +124,7 @@ func isWindowsAppsPath(path string) bool {
 
 // DownloadPythonInstaller 下载 Python 安装包到启动器同级目录
 // 下载完成后自动启动安装向导，后续勾选配置与安装交给用户手动操作
-func DownloadPythonInstaller(baseDir string, logger Logger) error {
+func DownloadPythonInstaller(logger Logger) error {
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("获取启动器路径失败: %w", err)
@@ -157,16 +154,17 @@ func DownloadPythonInstaller(baseDir string, logger Logger) error {
 	return nil
 }
 
-// EnsureVenv 确保 .venv 虚拟环境已创建
-func EnsureVenv(baseDir string, pythonExe string, logger Logger) (string, error) {
-	venvPython := filepath.Join(baseDir, ".venv", "Scripts", "python.exe")
+// EnsureVenv 确保 .venv 虚拟环境已创建（exeDir 级）
+func EnsureVenv(pythonExe string, logger Logger) (string, error) {
+	venvDir := filepath.Join(GetExeDir(), ".venv")
+	venvPython := filepath.Join(venvDir, "Scripts", "python.exe")
 	if _, err := os.Stat(venvPython); err == nil {
 		logger.Logf("虚拟环境已存在: %s", venvPython)
 		return venvPython, nil
 	}
 
 	logger.Logf("正在创建虚拟环境 .venv ...")
-	cmd := exec.Command(pythonExe, "-m", "venv", filepath.Join(baseDir, ".venv"))
+	cmd := exec.Command(pythonExe, "-m", "venv", venvDir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -178,13 +176,13 @@ func EnsureVenv(baseDir string, pythonExe string, logger Logger) (string, error)
 }
 
 func DownloadNode(logger Logger) error {
-	toolsDir := GetToolsDir()
-	os.MkdirAll(toolsDir, os.ModePerm)
+	binDir := GetBinDir()
+	os.MkdirAll(binDir, os.ModePerm)
 
-	nodeDir := filepath.Join(toolsDir, "node")
+	nodeDir := filepath.Join(binDir, "node")
 
 	url := "https://npmmirror.com/mirrors/node/v24.15.0/node-v24.15.0-win-x64.zip"
-	zipPath := filepath.Join(toolsDir, "node.zip")
+	zipPath := filepath.Join(binDir, "node.zip")
 
 	logger.Logf("正在下载 Node.js 24.15.0 ...")
 	if err := downloadFile(url, zipPath, logger); err != nil {
@@ -192,7 +190,7 @@ func DownloadNode(logger Logger) error {
 	}
 
 	logger.Logf("正在解压 Node.js ...")
-	tmpDir := filepath.Join(toolsDir, "node_tmp")
+	tmpDir := filepath.Join(binDir, "node_tmp")
 	os.RemoveAll(tmpDir)
 	os.MkdirAll(tmpDir, os.ModePerm)
 	if err := unzip(zipPath, tmpDir); err != nil {

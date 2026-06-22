@@ -10,17 +10,13 @@ import {
   setFrontendRunning,
   setProgress,
   setUpdateStatus,
-  setCheckingUpdate,
   setUpdating,
-  setVersion,
   resetProgress,
   addWebviewTab,
 } from './store/launcher';
 import { useTheme } from './context/ThemeContext';
 import {
-  CheckUpdate,
   GetLogs,
-  GetVersion,
   BackendRunning,
   FrontendRunning,
   IsProjectDeployed,
@@ -30,7 +26,7 @@ import {
   FrontendStart,
   FrontendStop,
   LoadConfig,
-  PerformUpdate,
+  SyncProject,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime';
 import GitManager from './components/GitManager';
@@ -41,9 +37,7 @@ function App() {
   const appFrameRef = useRef<HTMLIFrameElement>(null);
   const {
     logs,
-    version,
     updateStatus,
-    checkingUpdate,
     updating,
     progress,
     copied,
@@ -100,15 +94,6 @@ function App() {
     }
   }, [dispatch, stopPolling, refreshIframe]);
 
-  const refreshStatus = async () => {
-    try {
-      const v = await GetVersion();
-      dispatch(setVersion(v));
-    } catch {
-      // ignore
-    }
-  };
-
   useEffect(() => {
     LoadConfig().then(() => {
       IsProjectDeployed().then((d: boolean) => {
@@ -118,7 +103,6 @@ function App() {
             '初次部署项目，请点击「下载项目」按钮\n',
           ]));
         }
-        refreshStatus();
       });
       // 查询后端/前端运行状态
       BackendRunning().then((r: boolean) => dispatch(setBackendRunning(r)));
@@ -169,31 +153,17 @@ function App() {
     }
   }, [logs]);
 
-  const handleCheckUpdate = async () => {
-    if (checkingUpdate) return;
-    dispatch(setCheckingUpdate(true));
+  const handleSync = async () => {
+    dispatch(setUpdating(true));
     try {
-      const status = await CheckUpdate();
+      const status = await SyncProject();
+      setDeployed(true);
       dispatch(setUpdateStatus(status));
     } catch {
       dispatch(setUpdateStatus(null));
     } finally {
-      dispatch(setCheckingUpdate(false));
-    }
-  };
-
-  const handleUpdate = async () => {
-    dispatch(setUpdating(true));
-    try {
-      await PerformUpdate();
-      setDeployed(true);
-      await refreshStatus();
-      dispatch(setUpdateStatus(null));
-      dispatch(resetProgress());
-    } catch {
-      dispatch(resetProgress());
-    } finally {
       dispatch(setUpdating(false));
+      dispatch(resetProgress());
     }
   };
 
@@ -271,24 +241,10 @@ function App() {
   };
 
   const getUpdateButtonText = () => {
-    if (checkingUpdate) return '检查中...';
-    if (updating) return '更新中...';
+    if (updating) return '同步中...';
     if (!deployed) return '下载项目';
-    if (updateStatus?.has_update) return '下载更新';
-    if (updateStatus !== null) return '已是最新';
+    if (updateStatus?.has_update) return '有可用更新';
     return '检查更新';
-  };
-
-  const handleUpdateButtonClick = () => {
-    if (!deployed) {
-      handleUpdate();
-      return;
-    }
-    if (updateStatus?.has_update) {
-      handleUpdate();
-    } else {
-      handleCheckUpdate();
-    }
   };
 
   const backendBtnText = backendRunning
@@ -335,8 +291,8 @@ function App() {
               <div className="toolbar-left">
                 <button
                   className="btn warn"
-                  onClick={handleUpdateButtonClick}
-                  disabled={checkingUpdate || updating || preparing}
+                  onClick={handleSync}
+                  disabled={updating || preparing}
                 >
                   {getUpdateButtonText()}
                 </button>
@@ -370,11 +326,6 @@ function App() {
                 >
                   {copied ? '复制成功' : '复制日志'}
                 </button>
-              </div>
-              <div className="toolbar-right">
-                <div className="meta">
-                  <span className="version">本地版本: {version || '-'}</span>
-                </div>
               </div>
             </div>
 

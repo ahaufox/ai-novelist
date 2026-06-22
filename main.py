@@ -2,22 +2,15 @@ import os
 import sys
 from pathlib import Path
 
-# 配置 GitPython 使用打包的 git 可执行文件
-def setup_portable_git():
-    """检测并使用便携版 Git（便携 Python 模式）"""
-    script_dir = Path(sys.argv[0]).parent.resolve()
-    git_exe = script_dir / 'bin' / 'git' / 'bin' / 'git.exe'
-    if git_exe.exists():
-        os.environ['GIT_PYTHON_GIT_EXECUTABLE'] = str(git_exe)
-        os.environ['GIT_PYTHON_REFRESH'] = 'quiet'
-        git_bin = git_exe.parent
-        os.environ['PATH'] = str(git_bin) + os.pathsep + os.environ.get('PATH', '')
-        return True
-    return False
+# 配置 GitPython 使用便携版 git（从环境变量读取）
+git_exe = os.environ.get("AI_NOVELIST_GIT_EXECUTABLE")
+if git_exe:
+    os.environ['GIT_PYTHON_GIT_EXECUTABLE'] = git_exe
+    os.environ['GIT_PYTHON_REFRESH'] = 'quiet'
+    git_bin = Path(git_exe).parent
+    os.environ['PATH'] = str(git_bin) + os.pathsep + os.environ.get('PATH', '')
 
-setup_portable_git()
-
-# 添加项目根目录到 sys.path（确保便携环境中能正确导入 backend）
+# 添加项目根目录到 sys.path
 script_dir = Path(__file__).parent.resolve()
 if str(script_dir) not in sys.path:
     sys.path.insert(0, str(script_dir))
@@ -27,7 +20,7 @@ os.environ["LITELLM_LOG"] = "ERROR"
 
 import logging
 
-# 强制 stdout/stderr 使用 UTF-8 编码，避免 Windows 下 GBK 编码导致日志乱码
+# 强制 stdout/stderr 使用 UTF-8 编码
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
@@ -39,19 +32,10 @@ initialize_directories_and_files()
 # 初始化完成后再导入 settings
 from backend import settings
 
-# 获取静态文件目录路径（支持开发环境和便携 Python 环境）
-def get_static_dir():
-    # 优先使用相对于脚本的路径（便携 Python 环境）
-    script_dir = Path(sys.argv[0]).parent.resolve()
-    static_from_script = script_dir / 'static'
-    if static_from_script.exists():
-        return static_from_script
-    # 开发环境：当前工作目录
-    return Path('static').resolve()
+# 静态文件目录由启动器通过环境变量传入
+static_dir = Path(settings.STATIC_DIR)
 
-static_dir = get_static_dir()
-
-# 配置日志（在导入其他模块之前，确保所有日志都能被正确捕获）
+# 配置日志
 log_level_map = {
     "DEBUG": logging.DEBUG,
     "INFO": logging.INFO,
@@ -79,7 +63,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 
 from backend import chat_router, chat_router2, history_router, file_router, config_router, knowledge_router, model_router, mode_router, mcp_router, checkpoint_router, ws_router, auth_router
 
-# 创建FastAPI应用，禁用默认文档，使用自定义离线文档
+# 创建FastAPI应用
 app = FastAPI(
     title="AI Novelist Backend",
     description="""
@@ -92,12 +76,15 @@ app = FastAPI(
     redoc_url=None,  # 禁用默认的 ReDoc
 )
 
+# 从环境变量读取前端端口
+_frontend_port = os.environ.get("AI_NOVELIST_FRONTEND_PORT", "3000")
+
 # 配置CORS中间件
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
+        f"http://localhost:{_frontend_port}",
+        f"http://127.0.0.1:{_frontend_port}",
         "file://"  # 允许 Electron 本地文件协议
     ],
     allow_credentials=True,
@@ -174,7 +161,6 @@ async def http_exception_handler(request, exc):
 
 if __name__ == "__main__":
     try:
-        # 启动服务器
         logger.info("后端运行中......")
 
         uvicorn.run(

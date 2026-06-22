@@ -28,8 +28,12 @@ func deepMerge(target, source map[string]interface{}) {
 }
 
 // MigrateYaml 从迁移脚本读取默认值，补全用户配置中缺失的字段
+// projectPath: 项目代码目录（用于找 scripts/）
+// configDir: 配置目录（exeDir/data/config/）
+// filename: 配置文件名（如 store.yaml）
+// migrationFilename: 迁移脚本文件名（如 store_migration.yaml）
 func MigrateYaml(projectPath, configDir, filename, migrationFilename string) error {
-	filePath := filepath.Join(projectPath, configDir, filename)
+	filePath := filepath.Join(configDir, filename)
 	migrationPath := filepath.Join(projectPath, "scripts", migrationFilename)
 
 	// 读取迁移脚本
@@ -77,6 +81,8 @@ func MigrateYaml(projectPath, configDir, filename, migrationFilename string) err
 }
 
 // MigrateDotfiles 只检查 dotfiles 是否存在，不存在则按迁移脚本创建
+// projectPath: 项目代码目录（用于找 scripts/）
+// dataDir: 数据目录（exeDir/data/）
 func MigrateDotfiles(projectPath, dataDir string) error {
 	migrationPath := filepath.Join(projectPath, "scripts", "dotfiles_migration.yaml")
 	if _, err := os.Stat(migrationPath); os.IsNotExist(err) {
@@ -104,7 +110,7 @@ func MigrateDotfiles(projectPath, dataDir string) error {
 		if !ok {
 			continue
 		}
-		filePath := filepath.Join(projectPath, dataDir, dstName)
+		filePath := filepath.Join(dataDir, dstName)
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
 				return fmt.Errorf("写入 dotfile %s 失败: %w", dstName, err)
@@ -115,7 +121,8 @@ func MigrateDotfiles(projectPath, dataDir string) error {
 	// 项目根目录下的 .env 文件
 	// 如果文件不存在则创建，如果存在则补充缺失的键
 	if envContent, ok := defaults["env"]; ok {
-		envPath := filepath.Join(projectPath, ".env")
+		// 使用 exeDir 级的 .env
+		envPath := filepath.Join(filepath.Dir(projectPath), ".env")
 
 		// 读取已有的 .env 文件中已有的键
 		existingLines := make(map[string]bool)
@@ -177,7 +184,7 @@ func MigrateDotfiles(projectPath, dataDir string) error {
 }
 
 // EnsureDataSubdirs 检查并创建 data 下所有一级文件夹
-func EnsureDataSubdirs(projectPath, dataDir string) error {
+func EnsureDataSubdirs(dataDir string) error {
 	expectedDirs := []string{
 		"config",
 		"chromadb",
@@ -186,9 +193,8 @@ func EnsureDataSubdirs(projectPath, dataDir string) error {
 		"temp",
 		"skills",
 	}
-	base := filepath.Join(projectPath, dataDir)
 	for _, name := range expectedDirs {
-		dir := filepath.Join(base, name)
+		dir := filepath.Join(dataDir, name)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("创建目录 %s 失败: %w", dir, err)
 		}
@@ -211,8 +217,8 @@ var oldToolMapping = map[string]string{
 
 // MigrateToolNames 迁移 store.yaml 中所有 mode 配置的工具列表
 // 将旧工具名替换为新工具名，无对应新工具的旧工具名直接删除
-func MigrateToolNames(projectPath, configDir, filename string) error {
-	filePath := filepath.Join(projectPath, configDir, filename)
+func MigrateToolNames(configDir, filename string) error {
+	filePath := filepath.Join(configDir, filename)
 
 	// 读取用户配置
 	data, err := os.ReadFile(filePath)
@@ -301,25 +307,28 @@ func MigrateToolNames(projectPath, configDir, filename string) error {
 }
 
 // RunAll 执行全部迁移
-func RunAll(projectPath string) error {
+// projectPath: 项目代码目录（qingzhu/，用于找 scripts/）
+// dataDir: 数据目录（exeDir/data/）
+// configDir: 配置目录（exeDir/data/config/）
+func RunAll(projectPath, dataDir, configDir string) error {
 	// store.yaml 工具名称迁移（先执行，清理旧工具名）
-	if err := MigrateToolNames(projectPath, "data/config", "store.yaml"); err != nil {
+	if err := MigrateToolNames(configDir, "store.yaml"); err != nil {
 		return fmt.Errorf("store.yaml 工具名迁移失败: %w", err)
 	}
 	// store.yaml 字段补全
-	if err := MigrateYaml(projectPath, "data/config", "store.yaml", "store_migration.yaml"); err != nil {
+	if err := MigrateYaml(projectPath, configDir, "store.yaml", "store_migration.yaml"); err != nil {
 		return fmt.Errorf("store.yaml 迁移失败: %w", err)
 	}
 	// skills.yaml 迁移
-	if err := MigrateYaml(projectPath, "data/config", "skills.yaml", "skills_migration.yaml"); err != nil {
+	if err := MigrateYaml(projectPath, configDir, "skills.yaml", "skills_migration.yaml"); err != nil {
 		return fmt.Errorf("skills.yaml 迁移失败: %w", err)
 	}
 	// 确保 data 一级目录
-	if err := EnsureDataSubdirs(projectPath, "data"); err != nil {
+	if err := EnsureDataSubdirs(dataDir); err != nil {
 		return fmt.Errorf("data 目录检查失败: %w", err)
 	}
 	// dotfiles 迁移
-	if err := MigrateDotfiles(projectPath, "data"); err != nil {
+	if err := MigrateDotfiles(projectPath, dataDir); err != nil {
 		return fmt.Errorf("dotfiles 迁移失败: %w", err)
 	}
 	return nil

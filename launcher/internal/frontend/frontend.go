@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-
-	"launcher/internal/updater"
 )
 
 type Logger interface {
@@ -29,17 +27,22 @@ func makeNodeEnv(nodePath string) []string {
 	return env
 }
 
+// NpmInstall 安装前端依赖（node_modules 装到 exeDir 级的 .modules/）
 func NpmInstall(projectPath, nodePath string, logger Logger) error {
+	exeDir := filepath.Dir(projectPath)
+	modulesDir := filepath.Join(exeDir, ".modules")
 	frontendPath := filepath.Join(projectPath, "frontend")
+
+	os.MkdirAll(modulesDir, 0755)
 
 	logger.Logf("正在安装前端依赖（可能需要几分钟）...")
 
 	npmPath := resolveNpm(nodePath)
-	cmd := exec.Command(npmPath, "install")
+	cmd := exec.Command(npmPath, "--prefix", modulesDir, "install")
 	cmd.Dir = frontendPath
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Env = append(makeNodeEnv(nodePath),
-		"npm_config_registry="+updater.NpmMirror,
+		"npm_config_registry=https://registry.npmmirror.com/",
 		"ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/",
 		"ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/",
 	)
@@ -73,14 +76,24 @@ func NpmInstall(projectPath, nodePath string, logger Logger) error {
 	return nil
 }
 
+// Start 启动前端 dev server（node_modules 从 exeDir 级的 .modules/ 读取）
 func Start(projectPath, nodePath string, logger Logger) (*exec.Cmd, error) {
+	exeDir := filepath.Dir(projectPath)
+	modulesDir := filepath.Join(exeDir, ".modules")
 	frontendPath := filepath.Join(projectPath, "frontend")
 
+	// 从环境变量读取前端端口（EnsureDotenv 已确保存在）
+	frontendPort := os.Getenv("AI_NOVELIST_FRONTEND_PORT")
+
 	npmPath := resolveNpm(nodePath)
-	cmd := exec.Command("cmd", "/c", npmPath, "run", "dev")
+	cmd := exec.Command("cmd", "/c", npmPath, "run", "dev", "--", "--port", frontendPort)
 	cmd.Dir = frontendPath
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	cmd.Env = makeNodeEnv(nodePath)
+	backendPort := os.Getenv("AI_NOVELIST_BACKEND_PORT")
+	cmd.Env = append(makeNodeEnv(nodePath),
+		"NODE_PATH="+filepath.Join(modulesDir, "node_modules"),
+		"VITE_AI_NOVELIST_BACKEND_URL=http://localhost:"+backendPort,
+	)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

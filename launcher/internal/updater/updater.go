@@ -10,10 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"launcher/internal/env"
 	"launcher/internal/gitutil"
 )
 
-// 硬编码配置 — 不再依赖外部 config.yaml
+// 硬编码配置
 const (
 	DefaultRemoteURL  = "https://denghuominghui.top/api/git/repo.git"
 	DefaultProjectDir = "qingzhu"
@@ -48,11 +49,12 @@ type Logger interface {
 
 // getExeDir 获取启动器exe所在目录
 func getExeDir() string {
-	exePath, err := os.Executable()
-	if err != nil {
-		return "."
-	}
-	return filepath.Dir(exePath)
+	return env.GetExeDir()
+}
+
+// GetBackupDir 获取备份仓库目录（exe同级/.qingzhu-backup/）
+func GetBackupDir() string {
+	return filepath.Join(getExeDir(), ".qingzhu-backup")
 }
 
 // GetProjectDir 获取项目目录（exe同级/projectDir），目录不存在时自动创建
@@ -66,12 +68,11 @@ func GetProjectDir(cfg *Config) string {
 	return projectDir
 }
 
-// EnsureRipgrep 检查 tools/ 目录下是否存在 rg.exe
+// EnsureRipgrep 检查 bin/ 目录下是否存在 rg.exe
 func EnsureRipgrep() error {
-	exeDir := getExeDir()
-	rgPath := filepath.Join(exeDir, "tools", "rg.exe")
+	rgPath := filepath.Join(env.GetBinDir(), "rg.exe")
 	if _, err := os.Stat(rgPath); os.IsNotExist(err) {
-		return fmt.Errorf("未找到 rg.exe: %s（请确保分发包中包含 tools/rg.exe）", rgPath)
+		return fmt.Errorf("未找到 rg.exe: %s（请确保分发包中包含 bin/rg.exe）", rgPath)
 	}
 	return nil
 }
@@ -79,18 +80,17 @@ func EnsureRipgrep() error {
 // vcDLLs 需要复制的 VC++ 运行时 DLL 列表
 var vcDLLs = []string{"msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"}
 
-// EnsureVcRedist 将启动器同级 vcredist/ 目录下的 VC++ 运行时 DLL 复制到 chromadb_rust_bindings/ 目录
+// EnsureVcRedist 将启动器同级 bin/vcredist/ 目录下的 VC++ 运行时 DLL 复制到 .venv 中
 func EnsureVcRedist(projectDir string) error {
-	exeDir := getExeDir()
-	srcDir := filepath.Join(exeDir, "vcredist")
+	srcDir := filepath.Join(getExeDir(), "bin", "vcredist")
 
-	// 检查 vcredist/ 是否存在
+	// 检查 bin/vcredist/ 是否存在
 	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
 		return fmt.Errorf("未找到 vcredist 目录: %s", srcDir)
 	}
 
-	// 目标目录：.venv/Lib/site-packages/chromadb_rust_bindings/
-	dstDir := filepath.Join(projectDir, ".venv", "Lib", "site-packages", "chromadb_rust_bindings")
+	// 目标目录：exeDir/.venv/Lib/site-packages/chromadb_rust_bindings/
+	dstDir := filepath.Join(getExeDir(), ".venv", "Lib", "site-packages", "chromadb_rust_bindings")
 	if _, err := os.Stat(dstDir); os.IsNotExist(err) {
 		return fmt.Errorf("未找到 chromadb_rust_bindings 目录: %s", dstDir)
 	}
@@ -113,10 +113,10 @@ func EnsureVcRedist(projectDir string) error {
 	return nil
 }
 
-// EnsureGit 检查 tools/git/ 下是否有 git.exe，没有则从 tools/ 下的安装包解压
+// EnsureGit 检查 bin/git/ 下是否有 git.exe，没有则从安装包解压
 func EnsureGit(logger Logger) error {
-	exeDir := getExeDir()
-	dstDir := filepath.Join(exeDir, "tools", "git")
+	binDir := env.GetBinDir()
+	dstDir := filepath.Join(binDir, "git")
 	gitExe := filepath.Join(dstDir, "bin", "git.exe")
 
 	// 已存在则跳过
@@ -124,18 +124,18 @@ func EnsureGit(logger Logger) error {
 		return nil
 	}
 
-	// 检查 tools/ 目录下是否有安装包
+	// 检查 bin/ 目录下是否有安装包
 	installerName := "PortableGit-2.54.0-64-bit.7z.exe"
-	installerPath := filepath.Join(exeDir, "tools", installerName)
+	installerPath := filepath.Join(binDir, installerName)
 
 	if _, err := os.Stat(installerPath); os.IsNotExist(err) {
-		// 下载到 tools/ 目录
+		// 下载到 bin/ 目录
 		url := "https://registry.npmmirror.com/-/binary/git-for-windows/v2.54.0.windows.1/PortableGit-2.54.0-64-bit.7z.exe"
 		if logger != nil {
 			logger.Logf("正在下载 Git 便携包 ...")
 		}
-		if err := os.MkdirAll(filepath.Join(exeDir, "tools"), 0755); err != nil {
-			return fmt.Errorf("创建 tools 目录失败: %w", err)
+		if err := os.MkdirAll(binDir, 0755); err != nil {
+			return fmt.Errorf("创建 bin 目录失败: %w", err)
 		}
 		if err := downloadFile(url, installerPath, logger); err != nil {
 			return fmt.Errorf("下载 Git 便携包失败: %w", err)
@@ -334,40 +334,6 @@ func CheckUpdateStatus(cfg *Config, logger Logger) (*UpdateStatus, error) {
 	return status, nil
 }
 
-// SyncBranchesFromRemote 同步远程分支到本地
-func SyncBranchesFromRemote(cfg *Config, logger Logger) {
-	projectDir := GetProjectDir(cfg)
-	if _, err := os.Stat(filepath.Join(projectDir, ".git")); os.IsNotExist(err) {
-		logger.Logf("项目未部署，跳过分支同步")
-		return
-	}
-
-	logger.Logf("正在 fetch 远程...")
-	if err := gitutil.RunIn(projectDir, "fetch", "--prune", "origin"); err != nil {
-		logger.Logf("fetch 远程失败: %v", err)
-		return
-	}
-
-	// 强制重置当前分支到远程最新
-	currentBranch, err := gitutil.OutputIn(projectDir, "rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil {
-		logger.Logf("获取当前分支失败: %v", err)
-		return
-	}
-	currentBranch = strings.TrimSpace(currentBranch)
-	if currentBranch != "" && currentBranch != "HEAD" {
-		remoteRef := "origin/" + currentBranch
-		if err := gitutil.RunIn(projectDir, "reset", "--hard", remoteRef); err != nil {
-			logger.Logf("重置 %s 到远程最新失败: %v", currentBranch, err)
-		} else {
-			logger.Logf("强制重置 %s 到远程最新", currentBranch)
-		}
-	}
-
-	// 同步分支：删除远程已删除的分支，创建新跟踪分支
-	syncBranches(projectDir, currentBranch, logger)
-}
-
 // syncBranches 同步本地分支与远程分支
 func syncBranches(projectDir string, currentBranch string, logger Logger) {
 	logger.Logf("[syncBranches] 当前分支: %s", currentBranch)
@@ -433,6 +399,7 @@ func syncBranches(projectDir string, currentBranch string, logger Logger) {
 // PullUpdates 根据项目目录是否存在，执行克隆或拉取更新
 func PullUpdates(cfg *Config, logger Logger) error {
 	projectDir := GetProjectDir(cfg)
+	backupDir := GetBackupDir()
 
 	// 检查项目仓库是否存在（通过 .git 目录判断）
 	if _, err := os.Stat(filepath.Join(projectDir, ".git")); os.IsNotExist(err) {
@@ -442,11 +409,19 @@ func PullUpdates(cfg *Config, logger Logger) error {
 
 	logger.Logf("开始拉取更新...")
 
-	// git fetch --prune origin
+	// 1. 更新主仓库
 	if err := gitutil.RunIn(projectDir, "fetch", "--prune", "origin"); err != nil {
 		return fmt.Errorf("获取远程更新失败: %w", err)
 	}
 	logger.Logf("远程 fetch 成功")
+
+	// 2. 同步更新备份仓库（先确保存在）
+	ensureBackupRepo(projectDir, backupDir, logger)
+	if err := gitutil.RunIn(backupDir, "fetch", "--prune", "origin"); err != nil {
+		logger.Logf("备份仓库 fetch 失败（非致命）: %v", err)
+	} else {
+		logger.Logf("备份仓库已同步")
+	}
 
 	// 获取当前分支
 	currentBranch, err := gitutil.OutputIn(projectDir, "rev-parse", "--abbrev-ref", "HEAD")
@@ -476,12 +451,14 @@ func PullUpdates(cfg *Config, logger Logger) error {
 
 func cloneProject(cfg *Config, logger Logger) error {
 	projectDir := GetProjectDir(cfg)
+	backupDir := GetBackupDir()
 
 	gitExe, err := gitutil.GetGitExe()
 	if err != nil {
 		return fmt.Errorf("获取 git 路径失败: %w", err)
 	}
 
+	// 1. 克隆到 qingzhu（正常仓库，有工作目录）
 	logger.Logf("正在克隆项目到 %s ...", projectDir)
 	cmd := exec.Command(gitExe, "clone", cfg.Git.RemoteURL, projectDir)
 	cmd.Stdout = nil
@@ -490,18 +467,47 @@ func cloneProject(cfg *Config, logger Logger) error {
 		logger.Logf("克隆项目失败: %v", err)
 		return fmt.Errorf("克隆项目失败: %w\n%s", err, string(output))
 	}
-
 	logger.Logf("项目克隆完成")
 
-	// 克隆后获取当前分支名
+	// 2. 克隆到备份仓库（bare repo，只存对象）
+	logger.Logf("正在创建备份仓库到 %s ...", backupDir)
+	cmd = exec.Command(gitExe, "clone", "--bare", cfg.Git.RemoteURL, backupDir)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if output, err := cmd.CombinedOutput(); err != nil {
+		logger.Logf("克隆备份仓库失败: %v", err)
+		return fmt.Errorf("克隆备份仓库失败: %w\n%s", err, string(output))
+	}
+	logger.Logf("备份仓库创建完成")
+
+	// 同步远程分支
 	currentBranch, _ := gitutil.OutputIn(projectDir, "rev-parse", "--abbrev-ref", "HEAD")
 	currentBranch = strings.TrimSpace(currentBranch)
-
 	logger.Logf("正在同步远程分支...")
 	syncBranches(projectDir, currentBranch, logger)
 
 	logger.Logf("接下来点击「准备环境」按钮，将会检测系统环境，下载需要的安装包/便携包")
 	return nil
+}
+
+// ensureBackupRepo 确保备份仓库存在，不存在则从本地创建
+func ensureBackupRepo(projectDir, backupDir string, logger Logger) {
+	if _, err := os.Stat(filepath.Join(backupDir, "HEAD")); os.IsNotExist(err) {
+		logger.Logf("备份仓库不存在，正在从本地创建...")
+		gitExe, err := gitutil.GetGitExe()
+		if err != nil {
+			logger.Logf("获取 git 路径失败: %v", err)
+			return
+		}
+		cmd := exec.Command(gitExe, "clone", "--bare", projectDir, backupDir)
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		if output, err := cmd.CombinedOutput(); err != nil {
+			logger.Logf("创建备份仓库失败: %v\n%s", err, string(output))
+			return
+		}
+		logger.Logf("备份仓库创建完成")
+	}
 }
 
 type logWriter struct {

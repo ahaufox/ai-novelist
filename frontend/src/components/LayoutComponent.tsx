@@ -61,18 +61,6 @@ function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutCompone
     }
   };
 
-  // 监听键盘快捷键
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Ctrl+` 保留（原为切换终端，终端功能已废弃）
-      if (event.ctrlKey && event.key === '`') {
-        event.preventDefault();
-      }
-    };
-    // 添加事件监听回调函数到DOM的window对象上
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   // 认证弹窗状态：'login' | 'user' | 'forgot' | null
   const [authModal, setAuthModal] = useState<'login' | 'user' | 'forgot' | null>(null);
@@ -107,8 +95,6 @@ function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutCompone
         leftPanelContent={leftPanelContent}
         onToggleCollapse={handleToggleCollapse}
         onLeftPanelContentChange={handleLeftPanelContentChange}
-        isTerminalVisible={false}
-        onToggleTerminal={() => {}}
       />
       <div className="h-[97%] flex-grow flex">
         <PanelGroup direction="horizontal" className="flex-grow flex h-full overflow-hidden min-h-0">

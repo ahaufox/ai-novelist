@@ -4,30 +4,35 @@ import { gitman } from '../../wailsjs/go/models';
 const ROW_H = 32;
 const LANE_W = 24;
 const DOT_R = 5;
+const HEAD_R = 8;
 const PAD_L = 16;
 const PAD_T = 16;
 const MSG_X = 320;
 
 interface Props {
-  data: gitman.GraphOutput | null;
+  data: gitman.DualGraphOutput | null;
+  onCheckout?: (sha: string) => void;
+  checkoutLoading?: boolean;
 }
 
-export default function GitGraphCanvas({ data }: Props) {
+export default function GitGraphCanvas({ data, onCheckout, checkoutLoading }: Props) {
   const [tooltip, setTooltip] = useState<gitman.NodeData | null>(null);
 
-  if (!data || data.nodes.length === 0) return null;
+  if (!data || !data.graph || data.graph.nodes.length === 0) return null;
 
-  const { max_lane, rows, nodes, segments } = data;
+  const { graph, working_head } = data;
+  const { rows, nodes, segments } = graph;
 
-  const svgW = PAD_L + max_lane * LANE_W + 400;
   const svgH = PAD_T + rows * ROW_H + 40;
 
   const y = (row: number) => PAD_T + row * ROW_H;
   const x = (lane: number) => PAD_L + lane * LANE_W + LANE_W / 2;
 
+  const workingNode = nodes.find(n => n.sha === working_head);
+
   return (
     <div className="git-graph-canvas-container" style={{ position: 'relative', overflow: 'auto', height: '100%' }}>
-      <svg width={svgW} height={svgH} style={{ fontFamily: 'monospace', display: 'block' }}>
+      <svg width="100%" height={svgH} style={{ fontFamily: 'monospace', display: 'block' }}>
         {/* 1. 线段（竖线、fork、merge） */}
         {segments.map((seg, i) => {
           const sx = x(seg.from_lane);
@@ -47,14 +52,35 @@ export default function GitGraphCanvas({ data }: Props) {
         {nodes.map((n) => {
           const cx = x(n.lane);
           const cy = y(n.row);
+          const isHead = n.sha === working_head;
           return (
             <g key={n.sha}>
+              {/* 如果是 working HEAD，画一个光环 */}
+              {isHead && (
+                <circle
+                  cx={cx} cy={cy} r={HEAD_R + 3}
+                  fill="none" stroke="#4CAF50" strokeWidth={2}
+                  opacity={0.6}
+                />
+              )}
               <circle
-                cx={cx} cy={cy} r={DOT_R}
-                fill={n.color} stroke="#fff" strokeWidth={1.5}
+                cx={cx} cy={cy} r={isHead ? HEAD_R : DOT_R}
+                fill={n.color}
+                stroke={isHead ? '#4CAF50' : '#fff'}
+                strokeWidth={isHead ? 2.5 : 1.5}
                 style={{ cursor: 'pointer' }}
                 onClick={() => setTooltip(t => t?.sha === n.sha ? null : n)}
               />
+              {/* HEAD 标签 */}
+              {isHead && (
+                <text
+                  x={cx + HEAD_R + 6} y={cy + 4}
+                  fontSize={10} fontWeight={600}
+                  fill="#4CAF50" dominantBaseline="middle"
+                >
+                  HEAD
+                </text>
+              )}
               <text x={MSG_X} y={cy + 4} fontSize={12} fill="#ccc" dominantBaseline="middle">
                 {n.message.slice(0, 80)}{n.message.length > 80 ? '…' : ''}
               </text>
@@ -63,24 +89,45 @@ export default function GitGraphCanvas({ data }: Props) {
         })}
       </svg>
 
-      {/* Tooltip */}
+      {/* Tooltip + 回档按钮 */}
       {tooltip && (
         <div className="git-graph-tooltip"
           style={{
             position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
             background: '#1a1a2e', border: '1px solid #333', borderRadius: 8,
-            padding: 14, color: '#ddd', zIndex: 1000, minWidth: 260,
+            padding: 14, color: '#ddd', zIndex: 1000, minWidth: 280,
             boxShadow: '0 8px 24px rgba(0,0,0,.6)',
           }}
-          onClick={() => setTooltip(null)}
         >
-          <div style={{ color: '#4CAF50', fontWeight: 600, marginBottom: 6, cursor: 'pointer', textAlign: 'right' }}>✕</div>
-          <div style={{ color: '#FFD700' }}>{tooltip.sha.slice(0, 8)}</div>
-          <div style={{ margin: '6px 0' }}>{tooltip.message}</div>
+          <div
+            style={{ color: '#4CAF50', fontWeight: 600, marginBottom: 6, cursor: 'pointer', textAlign: 'right' }}
+            onClick={() => setTooltip(null)}
+          >
+            ✕
+          </div>
+          <div style={{ color: '#FFD700', fontFamily: 'monospace' }}>{tooltip.sha.slice(0, 8)}</div>
+          <div style={{ margin: '6px 0', lineHeight: 1.5 }}>{tooltip.message}</div>
           <div style={{ color: '#888', fontSize: 12 }}>{tooltip.author}</div>
           <div style={{ color: '#888', fontSize: 12 }}>
             {new Date(tooltip.date).toLocaleString('zh-CN')}
           </div>
+
+          {onCheckout && (
+            <div style={{ marginTop: 12, borderTop: '1px solid #333', paddingTop: 10 }}>
+              <button
+                className="btn warn"
+                style={{ width: '100%', padding: '8px 0', fontSize: 13 }}
+                disabled={checkoutLoading}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCheckout(tooltip.sha);
+                  setTooltip(null);
+                }}
+              >
+                {checkoutLoading ? '回档中...' : '回档到该版本'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

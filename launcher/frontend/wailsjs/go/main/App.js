@@ -18,10 +18,6 @@ export function BackendStop() {
   return window['go']['main']['App']['BackendStop']();
 }
 
-export function CheckUpdate() {
-  return window['go']['main']['App']['CheckUpdate']();
-}
-
 export function Cleanup() {
   return window['go']['main']['App']['Cleanup']();
 }
@@ -66,6 +62,14 @@ export function GitCreateBranch(arg1) {
   return window['go']['main']['App']['GitCreateBranch'](arg1);
 }
 
+export function GitDualCheckout(arg1, arg2) {
+  return window['go']['main']['App']['GitDualCheckout'](arg1, arg2);
+}
+
+export function GitDualGraph(arg1) {
+  return window['go']['main']['App']['GitDualGraph'](arg1);
+}
+
 export function GitFullGraph(arg1) {
   return window['go']['main']['App']['GitFullGraph'](arg1);
 }
@@ -106,10 +110,6 @@ export function OpenWebviewTab(arg1, arg2) {
   return window['go']['main']['App']['OpenWebviewTab'](arg1, arg2);
 }
 
-export function PerformUpdate() {
-  return window['go']['main']['App']['PerformUpdate']();
-}
-
 export function PrepareEnvironment() {
   return window['go']['main']['App']['PrepareEnvironment']();
 }
@@ -124,4 +124,8 @@ export function StartGitServer() {
 
 export function StopGitServer() {
   return window['go']['main']['App']['StopGitServer']();
+}
+
+export function SyncProject() {
+  return window['go']['main']['App']['SyncProject']();
 }

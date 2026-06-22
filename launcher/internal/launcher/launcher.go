@@ -2,7 +2,6 @@ package launcher
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"launcher/internal/env"
 	"launcher/internal/updater"
@@ -15,17 +14,7 @@ type Logger interface {
 
 // PrepareEnvironment 准备环境：检测 Python 版本、下载 Git/Node/rg 等外部工具链
 // Python 下载后提醒用户手动安装，不自动安装
-func PrepareEnvironment(projectPath string, logger Logger) error {
-	if !filepath.IsAbs(projectPath) {
-		absPath, err := filepath.Abs(projectPath)
-		if err != nil {
-			return fmt.Errorf("无法解析项目路径: %w", err)
-		}
-		projectPath = absPath
-	}
-
-	baseDir := projectPath
-
+func PrepareEnvironment(logger Logger) error {
 	logger.Logf("=== 检查 ripgrep ===")
 	if err := updater.EnsureRipgrep(); err != nil {
 		return fmt.Errorf("准备 rg.exe 失败: %w", err)
@@ -37,13 +26,13 @@ func PrepareEnvironment(projectPath string, logger Logger) error {
 	}
 
 	logger.Logf("=== 检查 Node.js 环境 ===")
-	nodePath, ok := env.DetectNode(baseDir)
+	nodePath, ok := env.DetectNode()
 	if !ok {
 		logger.Logf("未找到便携版 Node.js，开始下载...")
 		if err := env.DownloadNode(logger); err != nil {
 			return fmt.Errorf("下载便携版 Node.js 失败: %w", err)
 		}
-		nodePath, ok = env.DetectNode(baseDir)
+		nodePath, ok = env.DetectNode()
 		if !ok {
 			return fmt.Errorf("下载后仍未找到 Node.js")
 		}
@@ -51,7 +40,7 @@ func PrepareEnvironment(projectPath string, logger Logger) error {
 	logger.Logf("使用 Node.js: %s", nodePath)
 
 	logger.Logf("=== 检查 Python 环境 ===")
-	_, ok = env.DetectVenvPython(baseDir)
+	_, ok = env.DetectVenvPython()
 	if ok {
 		logger.Logf("虚拟环境 Python 已存在")
 	} else {
@@ -61,7 +50,7 @@ func PrepareEnvironment(projectPath string, logger Logger) error {
 		} else {
 			logger.Logf("%s", check.Message)
 			logger.Logf("正在下载 Python 安装包，下载完成后请手动安装...")
-			if err := env.DownloadPythonInstaller(baseDir, logger); err != nil {
+			if err := env.DownloadPythonInstaller(logger); err != nil {
 				return fmt.Errorf("下载 Python 安装包失败: %w", err)
 			}
 			logger.Logf("Python 安装包已下载到启动器同级目录，并打开安装界面")
