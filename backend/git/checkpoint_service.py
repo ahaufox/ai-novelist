@@ -1,6 +1,8 @@
 """基于Git的检查点服务，用于管理文件归档。"""
 
 import logging
+import re
+import subprocess
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -342,6 +344,258 @@ class CheckpointService:
                 "success": False,
                 "message": f"获取工作区差异失败: {str(e)}",
             }
+
+
+    # ─── 分支图 ──────────────────────────────────────────────
+
+    BRANCH_COLORS = [
+        "#F4A261", "#4CAF50", "#2196F3", "#E91E63", "#9C27B0",
+        "#00BCD4", "#FF9800", "#8BC34A", "#FFEB3B", "#FF5722",
+    ]
+
+    @staticmethod
+    def _hash_to_color(seed: str) -> str:
+        """从字符串确定性分配颜色。"""
+        h = 0
+        for c in seed:
+            h = ((h << 5) - h) + ord(c)
+        h = abs(h)
+        return CheckpointService.BRANCH_COLORS[h % len(CheckpointService.BRANCH_COLORS)]
+
+    def get_graph(self, max_count: int = 200) -> Dict[str, Any]:
+        """获取分支图结构化数据。
+        
+        返回:
+            {
+                "max_lane": int,
+                "rows": int,
+                "nodes": [{"row","lane","sha","message","author","date","color","refs"},...],
+                "segments": [{"from_lane","to_lane","row","type","color"},...],
+            }
+        """
+        try:
+            repo = self.repo
+            project_dir = repo.working_dir
+
+            # Step 1: 获取 graph 拓扑（git log --graph --all --format=%H）
+            graph_out = repo.git.log(
+                graph=True, all=True, format="%H", max_count=max_count,
+            )
+            if not graph_out:
+                return {"max_lane": 0, "rows": 0, "nodes": [], "segments": []}
+
+            # Step 2: 获取 commit 详情
+            details_out = repo.git.log(
+                all=True, format="%H|%P|%s|%an|%aI|%D", max_count=max_count,
+            )
+            detail_map = self._parse_commit_details(details_out)
+
+            # Step 3: 逐行扫描 graph 输出，生成 nodes 和 segments
+            graph_lines = graph_out.split("\n")
+            nodes: List[Dict[str, Any]] = []
+            segments: List[Dict[str, Any]] = []
+            max_lane = 0
+            row = 0
+
+            for line in graph_lines:
+                line = line.rstrip("\r")
+                if not line:
+                    continue
+
+                sha = self._extract_trailing_sha(line)
+                graph_prefix = line[:len(line) - 40] if sha else line
+
+                for pos in range(len(graph_prefix)):
+                    ch = graph_prefix[pos]
+
+                    if pos % 2 == 0:
+                        # 偶数位置 → lane 指示符（* 或 |）
+                        lane = pos // 2
+                        if lane + 1 > max_lane:
+                            max_lane = lane + 1
+
+                        if ch == '|' and row > 0:
+                            segments.append({
+                                "from_lane": lane, "to_lane": lane,
+                                "row": row, "type": "vline",
+                            })
+                        elif ch == '*' and sha:
+                            d = detail_map.get(sha, {})
+                            nodes.append({
+                                "row": row,
+                                "lane": lane,
+                                "sha": sha,
+                                "message": d.get("message", ""),
+                                "author": d.get("author", ""),
+                                "date": d.get("date", ""),
+                                "refs": d.get("refs", []),
+                            })
+                    else:
+                        # 奇数位置 → 连接线（\ 或 /）
+                        if ch == '\\' and row > 0:
+                            from_lane = (pos - 1) // 2
+                            to_lane = (pos + 1) // 2
+                            if to_lane + 1 > max_lane:
+                                max_lane = to_lane + 1
+                            segments.append({
+                                "from_lane": from_lane, "to_lane": to_lane,
+                                "row": row, "type": "fork",
+                            })
+                        elif ch == '/' and row > 0:
+                            from_lane = (pos + 1) // 2
+                            to_lane = (pos - 1) // 2
+                            if from_lane + 1 > max_lane:
+                                max_lane = from_lane + 1
+                            segments.append({
+                                "from_lane": from_lane, "to_lane": to_lane,
+                                "row": row, "type": "merge",
+                            })
+
+                row += 1
+
+            total_rows = row
+
+            # Step 4: 补充缺失的竖线
+            lane_active_rows: Dict[int, set] = {}
+            def mark_lane(lane: int, r: int):
+                if lane not in lane_active_rows:
+                    lane_active_rows[lane] = set()
+                lane_active_rows[lane].add(r)
+
+            row = 0
+            for line in graph_lines:
+                line = line.rstrip("\r")
+                if not line:
+                    continue
+                sha = self._extract_trailing_sha(line)
+                graph_prefix = line[:len(line) - 40] if sha else line
+
+                for pos in range(len(graph_prefix)):
+                    ch = graph_prefix[pos]
+                    if pos % 2 == 0:
+                        if ch == '|' or ch == '*':
+                            mark_lane(pos // 2, row)
+                    else:
+                        if ch == '\\':
+                            mark_lane((pos + 1) // 2, row)
+                        elif ch == '/':
+                            mark_lane((pos + 1) // 2, row)
+                row += 1
+
+            vline_set = set()
+            for seg in segments:
+                if seg["type"] == "vline":
+                    key = f"{seg['from_lane']}:{seg['row']-1}→{seg['row']}"
+                    vline_set.add(key)
+
+            for lane, row_set in lane_active_rows.items():
+                sorted_rows = sorted(row_set)
+                for i in range(1, len(sorted_rows)):
+                    prev_row = sorted_rows[i - 1]
+                    curr_row = sorted_rows[i]
+                    if curr_row != prev_row + 1:
+                        continue
+                    key = f"{lane}:{prev_row}→{curr_row}"
+                    if key not in vline_set:
+                        segments.append({
+                            "from_lane": lane, "to_lane": lane,
+                            "row": curr_row, "type": "vline",
+                        })
+
+            # Step 5: 分配颜色
+            lane_branch: Dict[int, str] = {}
+            for n in nodes:
+                if n["lane"] in lane_branch:
+                    continue
+                d = detail_map.get(n["sha"], {})
+                for ref in d.get("refs", []):
+                    branch = ref.replace("HEAD -> ", "").replace("origin/", "").strip()
+                    if branch and branch != "HEAD":
+                        lane_branch[n["lane"]] = branch
+                        break
+
+            lane_color: Dict[int, str] = {}
+            for lane in range(max_lane):
+                seed = f"lane-{lane}"
+                if lane in lane_branch:
+                    seed = lane_branch[lane]
+                lane_color[lane] = self._hash_to_color(seed)
+
+            for n in nodes:
+                n["color"] = lane_color.get(n["lane"], "#888")
+            for seg in segments:
+                seg["color"] = lane_color.get(seg["from_lane"], "#888")
+
+            return {
+                "max_lane": max_lane,
+                "rows": total_rows,
+                "nodes": nodes,
+                "segments": segments,
+            }
+
+        except GitCommandError as e:
+            logger.error(f"获取分支图失败: {e}")
+            return {"max_lane": 0, "rows": 0, "nodes": [], "segments": []}
+
+    def _parse_commit_details(self, output: str) -> Dict[str, Dict[str, Any]]:
+        """解析 git log --format 输出为 {sha: detail} 字典。"""
+        detail_map: Dict[str, Dict[str, Any]] = {}
+        if not output:
+            return detail_map
+
+        for line in output.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("|", 5)
+            sha = parts[0]
+            parents_str = parts[1] if len(parts) > 1 else ""
+            message = parts[2] if len(parts) > 2 else ""
+            author = parts[3] if len(parts) > 3 else ""
+            date = parts[4] if len(parts) > 4 else ""
+            refs_str = parts[5] if len(parts) > 5 else ""
+
+            parents = parents_str.split() if parents_str else []
+            refs = [r.strip() for r in refs_str.split(", ") if r.strip()] if refs_str else []
+            is_head = any("HEAD" in r for r in refs)
+
+            detail_map[sha] = {
+                "parents": parents,
+                "message": message,
+                "author": author,
+                "date": date,
+                "refs": refs,
+                "is_head": is_head,
+            }
+        return detail_map
+
+    @staticmethod
+    def _extract_trailing_sha(line: str) -> Optional[str]:
+        """提取行末的 40 位 hex SHA，若不是则返回 None。"""
+        if len(line) < 40:
+            return None
+        candidate = line[-40:]
+        if re.fullmatch(r'[0-9a-f]{40}', candidate):
+            return candidate
+        return None
+
+    def checkout_commit(self, commit_hash: str) -> Dict[str, Any]:
+        """回档到指定提交（reset --hard）。"""
+        try:
+            repo = self.repo
+            commit = repo.commit(commit_hash)
+            repo.git.reset("--hard", commit_hash)
+            repo.git.clean("-fd")
+            logger.info(f"Checked out to commit: {commit_hash[:8]}")
+            return {
+                "success": True,
+                "commit_hash": commit.hexsha,
+                "short_hash": commit.hexsha[:8],
+                "message": commit.message.strip(),
+            }
+        except GitCommandError as e:
+            logger.error(f"回档失败: {e}")
+            return {"success": False, "message": f"回档失败: {str(e)}"}
 
 
 # 全局检查点服务实例

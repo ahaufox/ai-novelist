@@ -138,6 +138,37 @@ export interface ApiGitStatus {
   changes: ApiGitChange[];
 }
 
+// ==================== 分支图类型 ====================
+
+/** 分支图节点（一个 commit） */
+export interface GraphNode {
+  row: number;
+  lane: number;
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+  color: string;
+  refs: string[];
+}
+
+/** 分支图线段（竖线、分叉、合并） */
+export interface GraphSegment {
+  from_lane: number;
+  to_lane: number;
+  row: number;
+  type: 'vline' | 'fork' | 'merge';
+  color: string;
+}
+
+/** 分支图结构化数据 */
+export interface GraphData {
+  max_lane: number;
+  rows: number;
+  nodes: GraphNode[];
+  segments: GraphSegment[];
+}
+
 // ==================== 文件工具类型 ====================
 
 /** edit 工具参数 */

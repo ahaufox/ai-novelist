@@ -99,6 +99,10 @@ export type {
   WriteToolParams,
   ShellToolParams,
   QuestionToolParams,
+  // Git Graph
+  GraphNode,
+  GraphSegment,
+  GraphData,
 } from './api';
 
 // ==================== 组件共享类型 ====================

@@ -106,3 +106,36 @@ async def get_working_diff(file_path: str):
     except Exception as e:
         logger.error(f"获取工作区差异失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@checkpoint_router.get("/graph")
+async def get_graph(count: int = 200):
+    """
+    获取分支图结构化数据（nodes + segments），前端用于 SVG 渲染。
+    """
+    try:
+        service = get_checkpoint_service()
+        graph = service.get_graph(max_count=count)
+        return {"success": True, "graph": graph}
+    except Exception as e:
+        logger.error(f"获取分支图失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CheckoutRequest(BaseModel):
+    """回档请求。"""
+    commit_hash: str = Field(..., description="目标提交哈希")
+
+
+@checkpoint_router.post("/checkout")
+async def checkout_commit(request: CheckoutRequest):
+    """
+    回档到指定提交（reset --hard）。
+    """
+    try:
+        service = get_checkpoint_service()
+        result = service.checkout_commit(commit_hash=request.commit_hash)
+        return result
+    except Exception as e:
+        logger.error(f"回档失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
