@@ -14,7 +14,8 @@ type Logger interface {
 
 // PrepareEnvironment 准备环境：检测 Python 版本、下载 Git/Node/rg 等外部工具链
 // Python 下载后提醒用户手动安装，不自动安装
-func PrepareEnvironment(logger Logger) error {
+// projectDir: 项目目录（qingzhu/），用于定位 .venv
+func PrepareEnvironment(projectDir string, logger Logger) error {
 	logger.Logf("=== 检查 ripgrep ===")
 	if err := updater.EnsureRipgrep(); err != nil {
 		return fmt.Errorf("准备 rg.exe 失败: %w", err)
@@ -40,13 +41,13 @@ func PrepareEnvironment(logger Logger) error {
 	logger.Logf("使用 Node.js: %s", nodePath)
 
 	logger.Logf("=== 检查 Python 环境 ===")
-	_, ok = env.DetectVenvPython()
+	_, ok = env.DetectVenvPython(projectDir)
 	if ok {
 		logger.Logf("虚拟环境 Python 已存在")
 	} else {
 		check := env.CheckSystemPython()
 		if check.Found && check.Ok {
-			logger.Logf("系统 Python 满足要求: %s, 可以点击 [下载启动] 按钮", check.Version)
+			logger.Logf("系统 Python 满足要求: %s, 可以点击 [前端启动]/[后端启动] 按钮", check.Version)
 		} else {
 			logger.Logf("%s", check.Message)
 			logger.Logf("正在下载 Python 安装包，下载完成后请手动安装...")
@@ -70,7 +71,7 @@ func PrepareEnvironment(logger Logger) error {
 			logger.Logf("")
 			logger.Logf("手动安装后重新点击「准备环境」")
 			logger.Logf("如果显示：")
-			logger.Logf("     系统 Python 满足要求: 3.12.9（或其他 3.12.x 版本）, 可以点击 [下载启动] 按钮")
+			logger.Logf("     系统 Python 满足要求: 3.12.9（或其他 3.12.x 版本）, 可以点击 [前端启动]/[后端启动] 按钮")
 			logger.Logf("则说明安装成功，可以继续点击「下载启动」按钮")
 		}
 	}

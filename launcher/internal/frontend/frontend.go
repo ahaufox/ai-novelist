@@ -38,7 +38,10 @@ func NpmInstall(projectPath, nodePath string, logger Logger) error {
 	logger.Logf("正在安装前端依赖（可能需要几分钟）...")
 
 	npmPath := resolveNpm(nodePath)
-	cmd := exec.Command(npmPath, "--prefix", modulesDir, "install")
+	// 在 frontendPath 下执行 npm install（package.json 在那里）
+	// 然后通过 NODE_PATH 让运行时从 .modules/node_modules 找依赖
+	// 使用 --install-strategy=linked 将 node_modules 链接到外部目录
+	cmd := exec.Command("cmd", "/c", npmPath, "install", "--no-package-lock")
 	cmd.Dir = frontendPath
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Env = append(makeNodeEnv(nodePath),

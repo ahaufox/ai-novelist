@@ -168,7 +168,11 @@ func (a *App) SyncProject() (*updater.UpdateStatus, error) {
 }
 
 func (a *App) PrepareEnvironment() error {
-	return launcher.PrepareEnvironment(a)
+	if a.config == nil {
+		return fmt.Errorf("配置未加载")
+	}
+	projectDir := a.getProjectDir()
+	return launcher.PrepareEnvironment(projectDir, a)
 }
 
 // ─── 后端控制 ───
@@ -200,8 +204,8 @@ func (a *App) BackendStart() error {
 		return fmt.Errorf("配置迁移失败: %w", err)
 	}
 
-	// 检测 Python（exeDir 级的 .venv）
-	pythonPath, ok := env.DetectVenvPython()
+	// 检测 Python
+	pythonPath, ok := env.DetectVenvPython(projectDir)
 	if !ok {
 		a.Logf("未找到虚拟环境，检测系统 Python...")
 		check := env.CheckSystemPython()
@@ -210,7 +214,7 @@ func (a *App) BackendStart() error {
 			if err != nil {
 				return fmt.Errorf("获取系统 Python 真实路径失败: %w", err)
 			}
-			pythonPath, err = env.EnsureVenv(realPythonPath, a)
+			pythonPath, err = env.EnsureVenv(projectDir, realPythonPath, a)
 			if err != nil {
 				return fmt.Errorf("创建虚拟环境失败: %w", err)
 			}

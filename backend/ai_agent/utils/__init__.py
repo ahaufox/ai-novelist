@@ -1,5 +1,9 @@
-from backend.settings.settings import get_db_connection
+from backend.ai_agent.utils.file_utils import (
+    split_paragraphs,
+    format_file_with_hashes,
+)
 
 __all__ = [
-    "get_db_connection"
+    "split_paragraphs",
+    "format_file_with_hashes",
 ]

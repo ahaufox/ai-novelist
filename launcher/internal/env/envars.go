@@ -33,10 +33,6 @@ const (
 	EnvNpmExe  = "AI_NOVELIST_NPM_EXECUTABLE"
 	EnvRgExe   = "AI_NOVELIST_RG_EXECUTABLE"
 
-	// 依赖目录
-	EnvVenvDir    = "AI_NOVELIST_VENV_DIR"
-	EnvModulesDir = "AI_NOVELIST_MODULES_DIR"
-
 	// 静态文件目录
 	EnvStaticDir = "AI_NOVELIST_STATIC_DIR"
 
@@ -66,8 +62,6 @@ func AllEnvKeys() []string {
 		EnvNodeExe,
 		EnvNpmExe,
 		EnvRgExe,
-		EnvVenvDir,
-		EnvModulesDir,
 		EnvStaticDir,
 		EnvBackendPort,
 		EnvFrontendPort,
@@ -117,10 +111,6 @@ func BuildEnvMap(exeDir, projectDir string) map[string]string {
 	envs[EnvNodeExe] = filepath.Join(binDir, "node", "node.exe")
 	envs[EnvNpmExe] = filepath.Join(binDir, "node", "npm.cmd")
 	envs[EnvRgExe] = filepath.Join(binDir, "rg.exe")
-
-	// 依赖目录
-	envs[EnvVenvDir] = filepath.Join(exeDir, ".venv")
-	envs[EnvModulesDir] = filepath.Join(exeDir, ".modules")
 
 	// 静态文件目录
 	envs[EnvStaticDir] = filepath.Join(projectDir, "static")

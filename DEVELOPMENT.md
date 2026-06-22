@@ -43,11 +43,13 @@ PyCharm 可能会自动将导入重构为通过 `__init__.py` 简化导入，这
 - 避免因文件移动导致的导入错误
 - 便于IDE进行代码跳转和重构
 
-### 2. 配置文件访问
+### 2. 配置访问
 
-**规则：原则上，config.py外的任何文件不允许直接访问store.json配置文件，只能通过config.py提供的settings类方法间接操作**
+**规则：所有路径通过环境变量传入，应用配置通过 `settings` 实例操作，禁止自行计算路径或直接读写配置文件。**
 
-所有配置读取和修改操作必须通过 [`backend/config.py`](backend/settings/config.py) 中提供的 `settings` 类方法进行。
+路径由启动器统一管理（通过 `AI_NOVELIST_*` 环境变量传入），详见 [`launcher/internal/env/envars.go`](launcher/internal/env/envars.go)。
+
+应用配置（`store.yaml`）通过 `settings` 类方法操作：
 
 **示例：**
 
@@ -55,21 +57,26 @@ PyCharm 可能会自动将导入重构为通过 `__init__.py` 简化导入，这
 # ✅ 正确 - 通过settings类访问配置
 from backend.settings.settings import settings
 
-# 读取配置
-api_key = settings.get_config('mode')
+# 读取路径（从环境变量）
+data_dir = settings.DATA_DIR
 
-# ❌ 错误 - 直接访问store.json
-import json
+# 读取应用配置（从 store.yaml）
+mode = settings.get_config('mode')
 
-with open('backend/data/config/store.json', 'r') as f:
-    config = json.load(f)
-    api_key = config['openai']['api_key']
+# ❌ 错误 - 直接计算路径
+from pathlib import Path
+data_dir = Path(__file__).parent.parent.parent / 'data'
+
+# ❌ 错误 - 直接读写 store.yaml
+import yaml
+with open('data/config/store.yaml') as f:
+    config = yaml.safe_load(f)
 ```
 
 **原因：**
+- 路径由启动器决定，后端零计算，便于部署和重构
 - 统一配置管理入口，便于维护
-- 便于未来切换配置存储方式（如从文件切换到数据库）
-- 避免配置文件被意外破坏
+- 方便未来切换配置存储方式（如从文件切换到数据库）
 
 ## Git 协作规范
 

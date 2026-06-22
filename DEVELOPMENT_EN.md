@@ -1,10 +1,8 @@
-**English** | [中文](DEVELOPMENT.md)
+[English](DEVELOPMENT_EN.md) | **中文**
 
 # Development Standards
 
-This document records the development standards and conventions of the project. All contributors should follow these rules. (Updated: 2026/2/9)
-
----
+This document records the development standards and conventions of the project. Contributors should follow these rules. (Updated 2026/2/9)
 
 ## Backend Development Standards
 
@@ -47,33 +45,41 @@ PyCharm may automatically refactor imports through `__init__.py` to simplify the
 
 ---
 
-### 2. Configuration File Access
+### 2. Configuration Access
 
-**Rule: In principle, any file outside of [`backend/settings/settings.py`](backend/settings/settings.py) is not allowed to directly access the `store.json`/`store.yaml` configuration files. Operations can only be performed indirectly through the `settings` class methods provided by `settings.py`.**
+**Rule: All paths are passed via environment variables by the launcher. Application config is accessed through the `settings` instance. Do NOT compute paths yourself or read/write config files directly.**
 
-All configuration reading and modification operations must be performed through the `settings` class methods provided in [`backend/settings/settings.py`](backend/settings/settings.py).
+Paths are managed by the launcher via `AI_NOVELIST_*` environment variables. See [`launcher/internal/env/envars.go`](launcher/internal/env/envars.go) for the full list.
+
+Application config (`store.yaml`) is accessed through `settings` class methods:
 
 #### Example:
 
 ```python
-# ✅ Correct - Access configuration through settings class
+# ✅ Correct - Access through settings class
 from backend.settings.settings import settings
 
-# Read configuration
-api_key = settings.get_config('mode')
+# Read path (from environment variable)
+data_dir = settings.DATA_DIR
 
-# ❌ Incorrect - Directly access store.json
-import json
+# Read app config (from store.yaml)
+mode = settings.get_config('mode')
 
-with open('backend/data/config/store.json', 'r') as f:
-    config = json.load(f)
-    api_key = config['openai']['api_key']
+# ❌ Incorrect - Compute paths yourself
+from pathlib import Path
+data_dir = Path(__file__).parent.parent.parent / 'data'
+
+# ❌ Incorrect - Read store.yaml directly
+import yaml
+with open('data/config/store.yaml') as f:
+    config = yaml.safe_load(f)
 ```
 
 **Reasons:**
-- Unified configuration management entry point for easier maintenance
-- Facilitate future switching of configuration storage methods (e.g., from files to databases)
-- Avoid accidental corruption of configuration files
+- The launcher decides all paths; the backend does zero path computation
+- Easier deployment and refactoring
+- Unified configuration management entry point
+- Prevent accidental corruption of configuration files
 
 ---
 

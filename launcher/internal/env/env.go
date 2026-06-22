@@ -27,9 +27,9 @@ func GetBinDir() string {
 	return filepath.Join(GetExeDir(), "bin")
 }
 
-// DetectVenvPython 检测 .venv 中的 Python（exeDir 级）
-func DetectVenvPython() (string, bool) {
-	p := filepath.Join(GetExeDir(), ".venv", "Scripts", "python.exe")
+// DetectVenvPython 检测 .venv 中的 Python
+func DetectVenvPython(baseDir string) (string, bool) {
+	p := filepath.Join(baseDir, ".venv", "Scripts", "python.exe")
 	if _, err := os.Stat(p); err == nil {
 		return p, true
 	}
@@ -154,9 +154,9 @@ func DownloadPythonInstaller(logger Logger) error {
 	return nil
 }
 
-// EnsureVenv 确保 .venv 虚拟环境已创建（exeDir 级）
-func EnsureVenv(pythonExe string, logger Logger) (string, error) {
-	venvDir := filepath.Join(GetExeDir(), ".venv")
+// EnsureVenv 确保 .venv 虚拟环境已创建
+func EnsureVenv(baseDir string, pythonExe string, logger Logger) (string, error) {
+	venvDir := filepath.Join(baseDir, ".venv")
 	venvPython := filepath.Join(venvDir, "Scripts", "python.exe")
 	if _, err := os.Stat(venvPython); err == nil {
 		logger.Logf("虚拟环境已存在: %s", venvPython)
