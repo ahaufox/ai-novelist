@@ -1,22 +1,20 @@
-import { useState } from 'react';
-import type { GraphData, GraphNode } from '@/types';
+import type { GraphNode } from '@/types';
 
 // ─── 布局常量 ────────────────────────────────────────
-const ROW_H = 32;   // 每行高度
-const LANE_W = 24;  // 每列宽度
-const DOT_R = 5;    // 节点圆半径
-const HEAD_R = 8;   // HEAD 特殊圆半径
-const PAD_L = 16;   // 左侧留白
-const PAD_T = 16;   // 顶部留白
-const MSG_X = 320;  // commit message 起始 X
+const ROW_H = 36;    // 每行高度
+const DOT_R = 5;     // 圆点半径
+const LINE_L = 14;   // 时间线距左侧
+const MSG_X = 30;    // commit message 起始 X
+const CIRCLE_CX = 7; // 圆点圆心 X
 
 interface GitGraphProps {
-  data: GraphData | null;
-  /** 当前 HEAD 的 SHA（自定义仓库模式下，用于标记当前可执行仓库位置） */
+  data: { nodes: GraphNode[] } | null;
+  /** 当前 HEAD 的 SHA */
   workingHead?: string;
   onCheckout?: (sha: string) => void;
   checkoutLoading?: boolean;
-  /** 点击节点时触发，可用来显示详情 */
+  /** 选中节点 */
+  selectedSha?: string | null;
   onNodeClick?: (node: GraphNode) => void;
 }
 
@@ -25,201 +23,95 @@ export default function GitGraph({
   workingHead,
   onCheckout,
   checkoutLoading,
+  selectedSha,
   onNodeClick,
 }: GitGraphProps) {
-  const [tooltip, setTooltip] = useState<GraphNode | null>(null);
-
   if (!data || !data.nodes || data.nodes.length === 0) return null;
 
-  const { rows, nodes, segments } = data;
-  const svgH = PAD_T + rows * ROW_H + 40;
+  // 按 row 排序，保证时间线从上到下排列
+  const nodes = [...data.nodes].sort((a, b) => b.row - a.row);
+  const svgH = nodes.length * ROW_H + 16;
 
-  const y = (row: number) => PAD_T + row * ROW_H;
-  const x = (lane: number) => PAD_L + lane * LANE_W + LANE_W / 2;
-
-  const workingNode = workingHead
-    ? nodes.find((n) => n.sha === workingHead)
-    : undefined;
-
-  const handleNodeClick = (node: GraphNode) => {
-    setTooltip((t) => (t?.sha === node.sha ? null : node));
-    onNodeClick?.(node);
-  };
+  const y = (rowIndex: number) => 8 + rowIndex * ROW_H;
 
   return (
-    <div
-      className="git-graph-container"
-      style={{ position: 'relative', overflow: 'auto', height: '100%', width: '100%' }}
-    >
+    <div className="git-graph-container" style={{ height: '100%', overflow: 'auto' }}>
       <svg
         width="100%"
         height={svgH}
-        style={{ fontFamily: 'monospace', display: 'block', minWidth: MSG_X + 200 }}
+        style={{ display: 'block', minWidth: 260 }}
       >
-        {/* 1. 线段（竖线、fork、merge） */}
-        {segments.map((seg, i) => {
-          const sx = x(seg.from_lane);
-          const sy = y(seg.row - 1);
-          const ex = x(seg.to_lane);
-          const ey = y(seg.row);
-          return (
-            <line
-              key={`seg-${i}`}
-              x1={sx}
-              y1={sy}
-              x2={ex}
-              y2={ey}
-              stroke={seg.color}
-              strokeWidth={2}
-              opacity={0.7}
-            />
-          );
-        })}
+        {/* 垂直时间线 */}
+        {nodes.length > 1 && (
+          <line
+            x1={CIRCLE_CX}
+            y1={y(0) + DOT_R}
+            x2={CIRCLE_CX}
+            y2={y(nodes.length - 1) - DOT_R}
+            stroke="#555"
+            strokeWidth={2}
+          />
+        )}
 
-        {/* 2. commit 圆点 + message */}
-        {nodes.map((n) => {
-          const cx = x(n.lane);
-          const cy = y(n.row);
+        {/* commit 圆点 + message */}
+        {nodes.map((n, i) => {
+          const cy = y(i);
           const isHead = n.sha === workingHead;
+          const isSelected = n.sha === selectedSha;
           return (
-            <g key={n.sha} style={{ cursor: 'pointer' }}>
-              {/* HEAD 光环 */}
-              {isHead && (
+            <g
+              key={n.sha}
+              style={{ cursor: 'pointer' }}
+              onClick={() => onNodeClick?.(n)}
+            >
+              {/* 选中光环 */}
+              {isSelected && (
                 <circle
-                  cx={cx}
+                  cx={CIRCLE_CX}
                   cy={cy}
-                  r={HEAD_R + 3}
+                  r={DOT_R + 4}
                   fill="none"
                   stroke="#4CAF50"
                   strokeWidth={2}
-                  opacity={0.6}
+                  opacity={0.7}
                 />
               )}
-              <circle
-                cx={cx}
-                cy={cy}
-                r={isHead ? HEAD_R : DOT_R}
-                fill={n.color}
-                stroke={isHead ? '#4CAF50' : '#fff'}
-                strokeWidth={isHead ? 2.5 : 1.5}
-                onClick={() => handleNodeClick(n)}
-              />
-              {/* HEAD 标签 */}
-              {isHead && (
-                <text
-                  x={cx + HEAD_R + 6}
-                  y={cy + 4}
-                  fontSize={10}
-                  fontWeight={600}
-                  fill="#4CAF50"
-                  dominantBaseline="middle"
-                >
-                  HEAD
-                </text>
+              {/* HEAD 光环 */}
+              {isHead && !isSelected && (
+                <circle
+                  cx={CIRCLE_CX}
+                  cy={cy}
+                  r={DOT_R + 3}
+                  fill="none"
+                  stroke="#4CAF50"
+                  strokeWidth={1.5}
+                  opacity={0.5}
+                />
               )}
-              {/* refs 标签 */}
-              {n.refs &&
-                n.refs.length > 0 &&
-                !n.refs.some((r) => r.includes('HEAD')) && (
-                  <text
-                    x={cx + DOT_R + 6}
-                    y={cy + 4}
-                    fontSize={9}
-                    fill={n.color}
-                    dominantBaseline="middle"
-                  >
-                    {(n.refs[0] ?? '').replace('HEAD -> ', '').replace('origin/', '')}
-                  </text>
-                )}
-              {/* commit message */}
+              {/* 圆点 */}
+              <circle
+                cx={CIRCLE_CX}
+                cy={cy}
+                r={DOT_R}
+                fill={isHead || isSelected ? '#4CAF50' : '#888'}
+                stroke={isHead || isSelected ? '#4CAF50' : '#666'}
+                strokeWidth={1.5}
+              />
+              {/* message 文字（自动截断） */}
               <text
                 x={MSG_X}
                 y={cy + 4}
                 fontSize={12}
-                fill="#ccc"
+                fill={isHead || isSelected ? '#e0e0e0' : '#999'}
                 dominantBaseline="middle"
+                style={{ userSelect: 'none' }}
               >
-                {n.message.slice(0, 80)}
-                {n.message.length > 80 ? '…' : ''}
+                {n.message}
               </text>
             </g>
           );
         })}
       </svg>
-
-      {/* Tooltip 弹窗 */}
-      {tooltip && (
-        <div
-          className="git-graph-tooltip"
-          style={{
-            position: 'fixed',
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: '#1a1a2e',
-            border: '1px solid #333',
-            borderRadius: 8,
-            padding: 14,
-            color: '#ddd',
-            zIndex: 1000,
-            minWidth: 300,
-            boxShadow: '0 8px 24px rgba(0,0,0,.6)',
-          }}
-        >
-          <div
-            style={{
-              color: '#4CAF50',
-              fontWeight: 600,
-              marginBottom: 6,
-              cursor: 'pointer',
-              textAlign: 'right',
-            }}
-            onClick={() => setTooltip(null)}
-          >
-            ✕
-          </div>
-          <div style={{ color: '#FFD700', fontFamily: 'monospace', fontSize: 13 }}>
-            {tooltip.sha.slice(0, 8)}
-          </div>
-          <div style={{ margin: '6px 0', lineHeight: 1.5, fontSize: 13 }}>
-            {tooltip.message}
-          </div>
-          {tooltip.refs && tooltip.refs.length > 0 && (
-            <div style={{ color: '#4CAF50', fontSize: 11, marginBottom: 4 }}>
-              分支: {tooltip.refs.join(', ')}
-            </div>
-          )}
-          <div style={{ color: '#888', fontSize: 12 }}>{tooltip.author}</div>
-          <div style={{ color: '#888', fontSize: 12 }}>
-            {tooltip.date
-              ? new Date(tooltip.date).toLocaleString('zh-CN')
-              : ''}
-          </div>
-
-          {onCheckout && (
-            <div
-              style={{
-                marginTop: 12,
-                borderTop: '1px solid #333',
-                paddingTop: 10,
-              }}
-            >
-              <button
-                className="btn warn"
-                style={{ width: '100%', padding: '8px 0', fontSize: 13 }}
-                disabled={checkoutLoading}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCheckout(tooltip.sha);
-                  setTooltip(null);
-                }}
-              >
-                {checkoutLoading ? '回档中...' : '回档到该版本'}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

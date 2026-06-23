@@ -1,57 +1,46 @@
-import { useState, useEffect } from 'react';
-import { useDispatch } from 'react-redux';
+import { useState, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faHistory,
   faFile,
-  faProjectDiagram,
   faSync,
   faCodeBranch,
+  faRotateLeft,
+  faCheck,
+  faWarning,
 } from '@fortawesome/free-solid-svg-icons';
 import httpClient from '../../utils/httpClient';
-import { setCheckpointPreview } from '../../store/editor.ts';
 import GitGraph from './GitGraph';
 import type {
   CheckpointPanelProps,
   ApiCheckpoint,
-  ApiFileChange,
   ApiGitChange,
   ApiGitStatus,
   GraphData,
+  GraphNode,
 } from '@/types';
 
 const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
-  const dispatch = useDispatch();
   const [status, setStatus] = useState<ApiGitStatus | null>(null);
   const [checkpoints, setCheckpoints] = useState<ApiCheckpoint[]>([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [checkpointChangesMap, setCheckpointChangesMap] = useState<Record<string, any>>({});
-  const [restoring, setRestoring] = useState(false);
 
-  // ─── 分支图状态 ──────────────────────────────────────
+  // ─── 时间线状态 ──────────────────────────────────
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
-  /** 在图上选中节点后显示的变更文件列表 */
-  const [selectedNodeChanges, setSelectedNodeChanges] = useState<ApiFileChange[]>([]);
-  const [selectedNodeChangesMap, setSelectedNodeChangesMap] = useState<Record<string, any>>({});
-  const [selectedNodeSha, setSelectedNodeSha] = useState<string | null>(null);
-  const [selectedNodeLoading, setSelectedNodeLoading] = useState(false);
 
-  // 获取Git状态
-  useEffect(() => {
-    fetchStatus();
-  }, []);
+  // ─── 选中存档点 ──────────────────────────────────
+  const [selectedSha, setSelectedSha] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreMsg, setRestoreMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // 获取 Git 状态
+  useEffect(() => { fetchStatus(); }, []);
   // 获取所有存档点
-  useEffect(() => {
-    fetchCheckpoints();
-  }, []);
-
-  // 初始加载分支图
-  useEffect(() => {
-    fetchGraph();
-  }, []);
+  useEffect(() => { fetchCheckpoints(); }, []);
+  // 初始加载时间线
+  useEffect(() => { fetchGraph(); }, []);
 
   const fetchStatus = async () => {
     try {
@@ -79,12 +68,13 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
         setGraphData(response.graph);
       }
     } catch (error) {
-      console.error('获取分支图失败:', error);
+      console.error('获取时间线失败:', error);
     } finally {
       setGraphLoading(false);
     }
   };
 
+  // ─── 保存存档点 ──────────────────────────────────
   const handleSaveCheckpoint = async () => {
     if (loading) return;
     setLoading(true);
@@ -92,12 +82,10 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
       const response = await httpClient.post('/api/checkpoints/save', {
         message: message || undefined,
       });
-
       if (response.success) {
         setMessage('');
-        await fetchStatus();
-        await fetchCheckpoints();
-        await fetchGraph();
+        setRestoreMsg(null);
+        await Promise.all([fetchStatus(), fetchCheckpoints(), fetchGraph()]);
       }
     } catch (error) {
       console.error('保存存档点失败:', error);
@@ -106,278 +94,204 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
     }
   };
 
-  /** 点击分支图节点时加载变更详情 */
-  const handleGraphNodeClick = async (sha: string) => {
-    if (selectedNodeSha === sha) {
-      setSelectedNodeSha(null);
-      setSelectedNodeChanges([]);
-      setSelectedNodeChangesMap({});
-      return;
-    }
-    setSelectedNodeSha(sha);
-    setSelectedNodeChanges([]);
-    setSelectedNodeChangesMap({});
-    setSelectedNodeLoading(true);
-    try {
-      const response = await httpClient.get(`/api/checkpoints/diff/${sha}`);
-      if (response.success) {
-        if (response.is_initial_commit) {
-          setSelectedNodeChanges([
-            { path: '<初始提交>', change_type: 'INIT' } as any,
-          ]);
-          setSelectedNodeChangesMap({});
-        } else {
-          setSelectedNodeChanges(response.changes || []);
-          const changesMap: Record<string, any> = {};
-          (response.changes || []).forEach((change: any) => {
-            changesMap[change.path] = change;
-          });
-          setSelectedNodeChangesMap(changesMap);
-        }
-      }
-    } catch (error) {
-      console.error('获取节点差异失败:', error);
-    } finally {
-      setSelectedNodeLoading(false);
-    }
-  };
+  // ─── 点击时间线节点 ──────────────────────────────
+  const handleNodeClick = useCallback((node: GraphNode) => {
+    setSelectedSha((prev) => (prev === node.sha ? null : node.sha));
+    setRestoreMsg(null);
+  }, []);
 
-  /** 图上回档 */
-  const handleGraphCheckout = async (sha: string) => {
+  // ─── 回档 ────────────────────────────────────────
+  const handleCheckout = async () => {
+    if (!selectedSha) return;
     setRestoring(true);
+    setRestoreMsg(null);
     try {
       const response = await httpClient.post('/api/checkpoints/checkout', {
-        commit_hash: sha,
+        commit_hash: selectedSha,
       });
       if (response.success) {
-        await fetchStatus();
-        await fetchCheckpoints();
-        await fetchGraph();
-        setSelectedNodeSha(null);
-        setSelectedNodeChanges([]);
-        setSelectedNodeChangesMap({});
+        setRestoreMsg({ ok: true, text: '回档成功' });
+        await Promise.all([fetchStatus(), fetchCheckpoints(), fetchGraph()]);
+      } else {
+        setRestoreMsg({ ok: false, text: response.message || '回档失败' });
       }
-    } catch (error) {
-      console.error('回档失败:', error);
+    } catch (error: any) {
+      const detail = error?.detail || error?.message || '网络错误';
+      setRestoreMsg({ ok: false, text: detail });
     } finally {
       setRestoring(false);
     }
   };
 
-  const handleShowFileDiff = async (filePath: string, commitHash?: string) => {
-    try {
-      if (commitHash) {
-        const change = selectedNodeSha
-          ? selectedNodeChangesMap[filePath]
-          : checkpointChangesMap[filePath];
-        if (change) {
-          const originalContent = change.old_content || '';
-          const modifiedContent = change.new_content || '';
+  // ─── 当前选中存档点的 message ────────────────────
+  const selectedCheckpoint = selectedSha
+    ? checkpoints.find((c) => c.commit_hash === selectedSha)
+    : null;
 
-          dispatch(
-            setCheckpointPreview({
-              id: filePath,
-              checkpointContent: originalContent,
-              currentContent: modifiedContent,
-            })
-          );
-        } else {
-          console.warn('未找到文件的变更信息:', filePath);
-        }
-      } else {
-        const response = await httpClient.get(
-          `/api/checkpoints/working-diff/${filePath}`
-        );
-        if (response.success) {
-          dispatch(
-            setCheckpointPreview({
-              id: filePath,
-              checkpointContent: response.old_content || '',
-              currentContent: response.new_content || '',
-            })
-          );
-        } else {
-          console.warn('获取工作区差异失败:', response.message);
-        }
-      }
-    } catch (error) {
-      console.error('获取文件差异失败:', error);
+  // ─── 变更文件列表渲染 ────────────────────────────
+  const renderChangesList = () => {
+    if (!status) return null;
+    const untrackedChanges: ApiGitChange[] = (
+      status.untracked_files || []
+    ).map((file: string) => ({
+      path: file,
+      change_type: 'A' as const,
+    }));
+    const allChanges = [
+      ...(status.changes || []),
+      ...untrackedChanges,
+    ].sort((a, b) => a.path.localeCompare(b.path));
+
+    if (allChanges.length === 0) {
+      return <p className="text-xs text-theme-gray4">没有更改</p>;
     }
-  };
 
-  const getChangeTypeIcon = (change: ApiFileChange | ApiGitChange) => {
-    if (change.change_type === 'A')
-      return <FontAwesomeIcon icon={faFile} className="text-theme-green text-xs" />;
-    if (change.change_type === 'D')
-      return <FontAwesomeIcon icon={faFile} className="text-theme-red text-xs" />;
-    if (change.change_type === 'M')
-      return <FontAwesomeIcon icon={faFile} className="text-theme-yellow text-xs" />;
-    return <FontAwesomeIcon icon={faFile} className="text-theme-gray4 text-xs" />;
-  };
-
-  // ─── 变更文件列表渲染 ────────────────────────────────
-  const renderChangesList = (changes: ApiFileChange[], commitHash?: string) => {
-    if (changes.length === 0) return null;
-    return changes.map((change, index) => {
-      const isInitialCommit = change.change_type === 'INIT';
-      return (
-        <div
-          key={`change-${index}`}
-          className={`flex items-center gap-2 px-2 py-1 hover:bg-theme-gray2 rounded transition-colors ${
-            !isInitialCommit ? 'cursor-pointer' : ''
-          }`}
-          onClick={() =>
-            !isInitialCommit && handleShowFileDiff(change.path, commitHash)
+    return allChanges.map((change, index) => (
+      <div
+        key={`change-${index}`}
+        className="flex items-center gap-2 px-2 py-1 hover:bg-theme-gray2 rounded cursor-pointer transition-colors"
+      >
+        <FontAwesomeIcon
+          icon={faFile}
+          className={
+            change.change_type === 'A'
+              ? 'text-theme-green text-xs'
+              : change.change_type === 'D'
+                ? 'text-theme-red text-xs'
+                : 'text-theme-yellow text-xs'
           }
-        >
-          {getChangeTypeIcon(change)}
-          {isInitialCommit ? (
-            <span className="text-xs text-theme-gray4 italic">{change.path}</span>
-          ) : (
-            <span className="text-xs text-theme-white truncate">{change.path}</span>
-          )}
-        </div>
-      );
-    });
+        />
+        <span className="text-xs text-theme-white truncate">{change.path}</span>
+      </div>
+    ));
   };
 
   return (
-    <div className="w-full h-full bg-theme-black overflow-hidden">
-      {/* ─── 上半部分：保存存档点 ─────────────────────────── */}
-      <div className="h-[40%] flex flex-col p-1 border-b border-theme-gray3 overflow-hidden">
+    <div className="w-full h-full bg-theme-black overflow-hidden flex flex-col">
+      {/* ─── 上半部分：保存存档点 ─────────────────────── */}
+      <div className="h-[45%] flex flex-col p-2 border-b border-theme-gray3 overflow-hidden">
         <div className="flex items-center gap-2 mb-2">
+          <FontAwesomeIcon icon={faHistory} className="text-theme-green text-xs" />
           <h2 className="text-sm font-semibold text-theme-white">当前更改</h2>
         </div>
-        <div className="flex flex-col gap-2">
+
+        <div className="flex gap-2 mb-2">
           <input
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="保存消息"
-            className="w-full bg-theme-gray2 border border-theme-gray3 text-sm px-2 py-1 rounded"
+            placeholder="存档描述（可选）"
+            className="flex-1 bg-theme-gray2 border border-theme-gray3 text-sm px-2 py-1 rounded outline-none text-theme-white"
             disabled={loading}
           />
           <button
             onClick={handleSaveCheckpoint}
             disabled={loading}
-            className="w-full bg-theme-green text-black rounded text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors py-1"
+            className="bg-theme-green text-black rounded text-sm font-semibold px-3 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? '保存中...' : '保存'}
           </button>
         </div>
+
         {/* 更改文件列表 */}
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="pb-1 border-b border-theme-gray3 flex items-center gap-2">
-            <FontAwesomeIcon icon={faHistory} className="text-theme-green" />
-            <span className="text-sm text-theme-white font-semibold">当前更改</span>
-          </div>
-
-          {status && (
-            <div className="flex-1 overflow-y-auto">
-              {(() => {
-                const untrackedChanges: ApiGitChange[] = (
-                  status.untracked_files || []
-                ).map((file: string) => ({
-                  path: file,
-                  change_type: 'A' as const,
-                }));
-                const allChanges = [
-                  ...(status.changes || []),
-                  ...untrackedChanges,
-                ].sort((a, b) => a.path.localeCompare(b.path));
-
-                if (allChanges.length === 0) {
-                  return <p className="text-xs text-theme-gray4">没有更改</p>;
-                }
-
-                return allChanges.map((change, index) => (
-                  <div
-                    key={`change-${index}`}
-                    className="flex items-center gap-2 px-2 py-1 hover:bg-theme-gray2 rounded cursor-pointer transition-colors"
-                    onClick={() => handleShowFileDiff(change.path)}
-                  >
-                    {getChangeTypeIcon(change)}
-                    <span className="text-xs text-theme-white truncate">
-                      {change.path}
-                    </span>
-                  </div>
-                ));
-              })()}
-            </div>
-          )}
-        </div>
+        <div className="flex-1 overflow-y-auto min-h-0">{renderChangesList()}</div>
       </div>
 
-      {/* ─── 下半部分：分支图 ─────────────────────────────── */}
-      <div className="h-[60%] flex flex-col overflow-hidden">
-        {/* 标题栏 */}
-        <div className="flex items-center justify-between px-1 pb-1 border-b border-theme-gray3">
+      {/* ─── 下半部分：存档点时间线 ─────────────────── */}
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+        <div className="flex items-center justify-between px-2 py-1 border-b border-theme-gray3">
           <div className="flex items-center gap-2">
-            <FontAwesomeIcon icon={faProjectDiagram} className="text-theme-green" />
-            <h3 className="text-sm font-semibold text-theme-white">分支图</h3>
+            <FontAwesomeIcon icon={faCodeBranch} className="text-theme-green text-xs" />
+            <h3 className="text-sm font-semibold text-theme-white">存档点</h3>
           </div>
           <button
             onClick={fetchGraph}
             disabled={graphLoading}
             className="p-1 rounded text-xs text-theme-gray4 hover:text-theme-white transition-colors"
-            title="刷新分支图"
+            title="刷新"
           >
             <FontAwesomeIcon icon={faSync} spin={graphLoading} />
           </button>
         </div>
 
-        <div className="flex-1 flex overflow-hidden">
-          {/* 分支图主体 */}
-          <div className="flex-1 overflow-auto">
+        <div className="flex-1 flex overflow-hidden min-h-0">
+          {/* ── 左侧：时间线 ──────────────────────────── */}
+          <div className="w-[180px] flex-shrink-0 overflow-auto border-r border-theme-gray3">
             {graphLoading ? (
               <div className="flex items-center justify-center h-full text-theme-gray4 text-xs">
-                加载分支图中...
+                加载中...
               </div>
             ) : !graphData || graphData.nodes.length === 0 ? (
               <div className="flex items-center justify-center h-full text-theme-gray4 text-xs">
-                暂无分支图数据
+                暂无存档点
               </div>
             ) : (
-              <div className="h-full">
-                <GitGraph
-                  data={graphData}
-                  onCheckout={handleGraphCheckout}
-                  checkoutLoading={restoring}
-                  onNodeClick={(node) => handleGraphNodeClick(node.sha)}
-                />
-              </div>
+              <GitGraph
+                data={graphData}
+                selectedSha={selectedSha}
+                onNodeClick={handleNodeClick}
+                onCheckout={handleCheckout}
+                checkoutLoading={restoring}
+              />
             )}
           </div>
 
-          {/* 选中节点的变更文件详情侧栏 */}
-          {selectedNodeSha && (
-            <div className="w-56 flex-shrink-0 border-l border-theme-gray3 overflow-y-auto p-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-theme-green">
-                  <FontAwesomeIcon icon={faCodeBranch} className="mr-1" />
-                  {selectedNodeSha.slice(0, 8)}
-                </span>
+          {/* ── 右侧：存档点信息 ──────────────────────── */}
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            {selectedSha && selectedCheckpoint ? (
+              <div className="flex-1 flex flex-col p-2 overflow-hidden min-h-0">
+                {/* 选中存档点的基本信息 */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-mono text-xs text-theme-green font-semibold">
+                    {selectedCheckpoint.short_hash}
+                  </span>
+                  <span
+                    className="text-xs text-theme-white truncate flex-1"
+                    title={selectedCheckpoint.message}
+                  >
+                    {selectedCheckpoint.message}
+                  </span>
+                </div>
+
+                {/* 回档按钮 */}
                 <button
-                  onClick={() => {
-                    setSelectedNodeSha(null);
-                    setSelectedNodeChanges([]);
-                    setSelectedNodeChangesMap({});
-                  }}
-                  className="text-xs text-theme-gray4 hover:text-theme-white"
+                  onClick={handleCheckout}
+                  disabled={restoring}
+                  className="w-full bg-theme-red/20 border border-theme-red/40 text-theme-red text-xs rounded px-2 py-1.5 mb-2 hover:bg-theme-red/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
                 >
-                  ✕
+                  <FontAwesomeIcon icon={faRotateLeft} />
+                  {restoring ? '回档中...' : '回档到该版本'}
                 </button>
+
+                {/* 回档结果提示 */}
+                {restoreMsg && (
+                  <div
+                    className={`text-xs px-2 py-1 rounded mb-2 flex items-center gap-1 ${
+                      restoreMsg.ok
+                        ? 'bg-theme-green/10 text-theme-green border border-theme-green/30'
+                        : 'bg-theme-red/10 text-theme-red border border-theme-red/30'
+                    }`}
+                  >
+                    <FontAwesomeIcon icon={restoreMsg.ok ? faCheck : faWarning} />
+                    <span className="truncate">{restoreMsg.text}</span>
+                  </div>
+                )}
+
+                {/* 空状态 */}
+                <div className="flex-1 flex items-center justify-center text-theme-gray4 text-xs">
+                  选择存档点查看详情
+                </div>
               </div>
-              {selectedNodeLoading ? (
-                <div className="text-xs text-theme-gray4">加载中...</div>
-              ) : (
-                renderChangesList(selectedNodeChanges, selectedNodeSha)
-              )}
-            </div>
-          )}
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-theme-gray4 text-xs">
+                {checkpoints.length === 0
+                  ? '暂无存档点，请先保存'
+                  : '点击左侧时间线上的存档点查看详情'}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-
     </div>
   );
 };
