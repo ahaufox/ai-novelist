@@ -114,6 +114,14 @@ class CheckpointService:
             # 获取提交
             commit = repo.commit(commit_hash)
 
+            # 禁止回档到初始提交（root commit，无父提交）
+            if not list(commit.parents):
+                logger.warning(f"禁止回档到初始提交: {commit_hash[:8]}")
+                return {
+                    "success": False,
+                    "message": "禁止回档到初始提交：初始提交不包含任何文件，回档将导致所有运行时数据被删除",
+                }
+
             # 重置到该提交
             repo.git.reset("--hard", commit_hash)
 
@@ -584,6 +592,15 @@ class CheckpointService:
         try:
             repo = self.repo
             commit = repo.commit(commit_hash)
+
+            # 禁止回档到初始提交（root commit，无父提交）
+            if not list(commit.parents):
+                logger.warning(f"禁止回档到初始提交: {commit_hash[:8]}")
+                return {
+                    "success": False,
+                    "message": "禁止回档到初始提交：初始提交不包含任何文件，回档将导致所有运行时数据被删除",
+                }
+
             repo.git.reset("--hard", commit_hash)
             repo.git.clean("-fd")
             logger.info(f"Checked out to commit: {commit_hash[:8]}")
