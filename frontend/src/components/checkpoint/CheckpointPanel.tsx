@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faHistory,
@@ -8,6 +8,7 @@ import {
   faRotateLeft,
   faCheck,
   faWarning,
+  faXmark,
 } from '@fortawesome/free-solid-svg-icons';
 import httpClient from '../../utils/httpClient';
 import GitGraph from './GitGraph';
@@ -26,20 +27,17 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // ─── 时间线状态 ──────────────────────────────────
+  // ─── 时间线 ────────────────────────────────────────
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
 
-  // ─── 选中存档点 ──────────────────────────────────
-  const [selectedSha, setSelectedSha] = useState<string | null>(null);
+  // ─── 弹窗状态 ──────────────────────────────────────
+  const [modalNode, setModalNode] = useState<GraphNode | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [restoreMsg, setRestoreMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // 获取 Git 状态
   useEffect(() => { fetchStatus(); }, []);
-  // 获取所有存档点
   useEffect(() => { fetchCheckpoints(); }, []);
-  // 初始加载时间线
   useEffect(() => { fetchGraph(); }, []);
 
   const fetchStatus = async () => {
@@ -74,7 +72,7 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
     }
   };
 
-  // ─── 保存存档点 ──────────────────────────────────
+  // ─── 保存存档点 ────────────────────────────────────
   const handleSaveCheckpoint = async () => {
     if (loading) return;
     setLoading(true);
@@ -84,7 +82,6 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
       });
       if (response.success) {
         setMessage('');
-        setRestoreMsg(null);
         await Promise.all([fetchStatus(), fetchCheckpoints(), fetchGraph()]);
       }
     } catch (error) {
@@ -94,20 +91,25 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
     }
   };
 
-  // ─── 点击时间线节点 ──────────────────────────────
-  const handleNodeClick = useCallback((node: GraphNode) => {
-    setSelectedSha((prev) => (prev === node.sha ? null : node.sha));
+  // ─── 点击节点 → 弹出回档确认 ──────────────────────
+  const handleNodeClick = (node: GraphNode) => {
+    setModalNode(node);
     setRestoreMsg(null);
-  }, []);
+  };
 
-  // ─── 回档 ────────────────────────────────────────
+  const closeModal = () => {
+    setModalNode(null);
+    setRestoreMsg(null);
+  };
+
+  // ─── 回档 ──────────────────────────────────────────
   const handleCheckout = async () => {
-    if (!selectedSha) return;
+    if (!modalNode) return;
     setRestoring(true);
     setRestoreMsg(null);
     try {
       const response = await httpClient.post('/api/checkpoints/checkout', {
-        commit_hash: selectedSha,
+        commit_hash: modalNode.sha,
       });
       if (response.success) {
         setRestoreMsg({ ok: true, text: '回档成功' });
@@ -123,12 +125,7 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
     }
   };
 
-  // ─── 当前选中存档点的 message ────────────────────
-  const selectedCheckpoint = selectedSha
-    ? checkpoints.find((c) => c.commit_hash === selectedSha)
-    : null;
-
-  // ─── 变更文件列表渲染 ────────────────────────────
+  // ─── 变更文件列表 ──────────────────────────────────
   const renderChangesList = () => {
     if (!status) return null;
     const untrackedChanges: ApiGitChange[] = (
@@ -193,11 +190,10 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
           </button>
         </div>
 
-        {/* 更改文件列表 */}
         <div className="flex-1 overflow-y-auto min-h-0">{renderChangesList()}</div>
       </div>
 
-      {/* ─── 下半部分：存档点时间线 ─────────────────── */}
+      {/* ─── 下半部分：存档点时间线 ───────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden min-h-0">
         <div className="flex items-center justify-between px-2 py-1 border-b border-theme-gray3">
           <div className="flex items-center gap-2">
@@ -214,84 +210,88 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
           </button>
         </div>
 
-        <div className="flex-1 flex overflow-hidden min-h-0">
-          {/* ── 左侧：时间线 ──────────────────────────── */}
-          <div className="w-[180px] flex-shrink-0 overflow-auto border-r border-theme-gray3">
-            {graphLoading ? (
-              <div className="flex items-center justify-center h-full text-theme-gray4 text-xs">
-                加载中...
-              </div>
-            ) : !graphData || graphData.nodes.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-theme-gray4 text-xs">
-                暂无存档点
-              </div>
-            ) : (
-              <GitGraph
-                data={graphData}
-                selectedSha={selectedSha}
-                onNodeClick={handleNodeClick}
-                onCheckout={handleCheckout}
-                checkoutLoading={restoring}
-              />
-            )}
-          </div>
-
-          {/* ── 右侧：存档点信息 ──────────────────────── */}
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            {selectedSha && selectedCheckpoint ? (
-              <div className="flex-1 flex flex-col p-2 overflow-hidden min-h-0">
-                {/* 选中存档点的基本信息 */}
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="font-mono text-xs text-theme-green font-semibold">
-                    {selectedCheckpoint.short_hash}
-                  </span>
-                  <span
-                    className="text-xs text-theme-white truncate flex-1"
-                    title={selectedCheckpoint.message}
-                  >
-                    {selectedCheckpoint.message}
-                  </span>
-                </div>
-
-                {/* 回档按钮 */}
-                <button
-                  onClick={handleCheckout}
-                  disabled={restoring}
-                  className="w-full bg-theme-red/20 border border-theme-red/40 text-theme-red text-xs rounded px-2 py-1.5 mb-2 hover:bg-theme-red/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
-                >
-                  <FontAwesomeIcon icon={faRotateLeft} />
-                  {restoring ? '回档中...' : '回档到该版本'}
-                </button>
-
-                {/* 回档结果提示 */}
-                {restoreMsg && (
-                  <div
-                    className={`text-xs px-2 py-1 rounded mb-2 flex items-center gap-1 ${
-                      restoreMsg.ok
-                        ? 'bg-theme-green/10 text-theme-green border border-theme-green/30'
-                        : 'bg-theme-red/10 text-theme-red border border-theme-red/30'
-                    }`}
-                  >
-                    <FontAwesomeIcon icon={restoreMsg.ok ? faCheck : faWarning} />
-                    <span className="truncate">{restoreMsg.text}</span>
-                  </div>
-                )}
-
-                {/* 空状态 */}
-                <div className="flex-1 flex items-center justify-center text-theme-gray4 text-xs">
-                  选择存档点查看详情
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-theme-gray4 text-xs">
-                {checkpoints.length === 0
-                  ? '暂无存档点，请先保存'
-                  : '点击左侧时间线上的存档点查看详情'}
-              </div>
-            )}
-          </div>
+        <div className="flex-1 overflow-auto min-h-0">
+          {graphLoading ? (
+            <div className="flex items-center justify-center h-full text-theme-gray4 text-xs">
+              加载中...
+            </div>
+          ) : !graphData || graphData.nodes.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-theme-gray4 text-xs">
+              暂无存档点，请先保存
+            </div>
+          ) : (
+            <GitGraph
+              data={graphData}
+              onNodeClick={handleNodeClick}
+            />
+          )}
         </div>
       </div>
+
+      {/* ─── 回档确认弹窗 ────────────────────────────── */}
+      {modalNode && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={closeModal}
+        >
+          <div
+            className="bg-[#1a1a2e] border border-theme-gray3 rounded-lg p-4 min-w-[300px] max-w-[420px] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 关闭按钮 */}
+            <div className="flex justify-end mb-1">
+              <button
+                onClick={closeModal}
+                className="text-theme-gray4 hover:text-theme-white transition-colors"
+              >
+                <FontAwesomeIcon icon={faXmark} />
+              </button>
+            </div>
+
+            {/* 哈希值 */}
+            <div className="font-mono text-theme-green text-xs mb-2">
+              {modalNode.sha.slice(0, 8)}
+            </div>
+
+            {/* 完整 message */}
+            <div className="text-sm text-theme-white leading-relaxed mb-3 break-words">
+              {modalNode.message}
+            </div>
+
+            {/* 作者 & 日期 */}
+            <div className="text-xs text-theme-gray4 mb-4">
+              {modalNode.author && <div>{modalNode.author}</div>}
+              {modalNode.date && (
+                <div>{new Date(modalNode.date).toLocaleString('zh-CN')}</div>
+              )}
+            </div>
+
+            {/* 回档结果提示 */}
+            {restoreMsg && (
+              <div
+                className={`text-xs px-2 py-1 rounded mb-3 flex items-center gap-1 ${
+                  restoreMsg.ok
+                    ? 'bg-theme-green/10 text-theme-green border border-theme-green/30'
+                    : 'bg-theme-red/10 text-theme-red border border-theme-red/30'
+                }`}
+              >
+                <FontAwesomeIcon icon={restoreMsg.ok ? faCheck : faWarning} />
+                <span>{restoreMsg.text}</span>
+              </div>
+            )}
+
+            {/* 回档按钮 */}
+            <button
+              onClick={handleCheckout}
+              disabled={restoring}
+              className="w-full bg-theme-red/20 border border-theme-red/40 text-theme-red text-sm rounded px-3 py-2 hover:bg-theme-red/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            >
+              <FontAwesomeIcon icon={faRotateLeft} />
+              {restoring ? '回档中...' : '回档到该版本'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
