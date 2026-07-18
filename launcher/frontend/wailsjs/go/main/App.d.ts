@@ -66,3 +66,39 @@ export function StartGitServer():Promise<void>;
 export function StopGitServer():Promise<void>;
 
 export function SyncProject():Promise<updater.UpdateStatus>;
+
+// ==================== Auth Methods ====================
+
+export function AuthLogin(username:string, password:string):Promise<LoginResult>;
+
+export function AuthRegister(email:string, password:string, code:string):Promise<void>;
+
+export function AuthSendVerifyCode(email:string):Promise<void>;
+
+export function AuthSendResetCode(email:string):Promise<void>;
+
+export function AuthResetPassword(email:string, code:string, password:string):Promise<void>;
+
+export function AuthLogout():Promise<void>;
+
+export function AuthGetStatus():Promise<AuthStatus>;
+
+export function AuthGetUserInfo():Promise<UserInfo>;
+
+// ==================== Auth Types ====================
+
+export interface LoginResult {
+  user: UserInfo | null;
+  isAuthenticated: boolean;
+}
+
+export interface AuthStatus {
+  isAuthenticated: boolean;
+  user: UserInfo | null;
+}
+
+export interface UserInfo {
+  email?: string;
+  is_verified?: boolean;
+  created_at?: string;
+}

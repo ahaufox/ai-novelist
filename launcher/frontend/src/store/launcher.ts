@@ -7,6 +7,12 @@ export interface WebviewTab {
   url: string;
 }
 
+export interface UserInfo {
+  email?: string;
+  is_verified?: boolean;
+  created_at?: string;
+}
+
 export interface LauncherState {
   logs: string[];
   updateStatus: updater.UpdateStatus | null;
@@ -17,6 +23,10 @@ export interface LauncherState {
   backendRunning: boolean;
   frontendRunning: boolean;
   webviewTabs: WebviewTab[];
+  // 认证状态
+  isAuthenticated: boolean;
+  user: UserInfo | null;
+  authLoading: boolean;
 }
 
 const initialState: LauncherState = {
@@ -29,6 +39,9 @@ const initialState: LauncherState = {
   backendRunning: false,
   frontendRunning: false,
   webviewTabs: [],
+  isAuthenticated: false,
+  user: null,
+  authLoading: false,
 };
 
 export const launcherSlice = createSlice({
@@ -74,6 +87,16 @@ export const launcherSlice = createSlice({
     removeWebviewTab: (state: Draft<LauncherState>, action: PayloadAction<string>) => {
       state.webviewTabs = state.webviewTabs.filter((t) => t.id !== action.payload);
     },
+    // 认证状态
+    setAuthenticated: (state: Draft<LauncherState>, action: PayloadAction<boolean>) => {
+      state.isAuthenticated = action.payload;
+    },
+    setUser: (state: Draft<LauncherState>, action: PayloadAction<UserInfo | null>) => {
+      state.user = action.payload;
+    },
+    setAuthLoading: (state: Draft<LauncherState>, action: PayloadAction<boolean>) => {
+      state.authLoading = action.payload;
+    },
   },
 });
 
@@ -90,6 +113,9 @@ export const {
   resetProgress,
   addWebviewTab,
   removeWebviewTab,
+  setAuthenticated,
+  setUser,
+  setAuthLoading,
 } = launcherSlice.actions;
 
 export default launcherSlice.reducer;

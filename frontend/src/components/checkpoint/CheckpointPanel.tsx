@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useDispatch } from 'react-redux';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faHistory,
@@ -8,10 +9,11 @@ import {
   faRotateLeft,
   faCheck,
   faWarning,
-  faXmark,
 } from '@fortawesome/free-solid-svg-icons';
 import httpClient from '../../utils/httpClient';
+import { setCheckpointPreview } from '../../store/editor.ts';
 import GitGraph from './GitGraph';
+import type { FileChangeInfo } from './GitGraph';
 import type {
   CheckpointPanelProps,
   ApiCheckpoint,
@@ -22,6 +24,7 @@ import type {
 } from '@/types';
 
 const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
+  const dispatch = useDispatch();
   const [status, setStatus] = useState<ApiGitStatus | null>(null);
   const [checkpoints, setCheckpoints] = useState<ApiCheckpoint[]>([]);
   const [message, setMessage] = useState('');
@@ -31,8 +34,14 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
 
-  // ─── 弹窗状态 ──────────────────────────────────────
-  const [modalNode, setModalNode] = useState<GraphNode | null>(null);
+  // ─── 展开状态 ──────────────────────────────────────
+  const [expandedSha, setExpandedSha] = useState<string | null>(null);
+  const [expandedChanges, setExpandedChanges] = useState<FileChangeInfo[]>([]);
+  const [expandedLoading, setExpandedLoading] = useState(false);
+
+  // ─── 回档弹窗 ──────────────────────────────────────
+  const [rollbackSha, setRollbackSha] = useState<string | null>(null);
+  const [rollbackNode, setRollbackNode] = useState<GraphNode | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [restoreMsg, setRestoreMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -91,29 +100,69 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
     }
   };
 
-  // ─── 点击节点 → 弹出回档确认 ──────────────────────
-  const handleNodeClick = (node: GraphNode) => {
-    setModalNode(node);
+  // ─── 左键节点：展开/折叠 ──────────────────────────
+  const handleNodeClick = async (node: GraphNode) => {
+    // 如果点击的是已展开的节点，折叠
+    if (expandedSha === node.sha) {
+      setExpandedSha(null);
+      setExpandedChanges([]);
+      return;
+    }
+
+    // 展开：获取差异
+    setExpandedSha(node.sha);
+    setExpandedLoading(true);
+    setExpandedChanges([]);
+
+    try {
+      const response = await httpClient.get(`/api/checkpoints/diff/${node.sha}`);
+      if (response.success) {
+        if (response.is_initial_commit) {
+          setExpandedChanges([]);
+        } else {
+          setExpandedChanges(response.changes || []);
+        }
+      } else {
+        setExpandedChanges([]);
+      }
+    } catch (error) {
+      console.error('获取差异失败:', error);
+      setExpandedChanges([]);
+    } finally {
+      setExpandedLoading(false);
+    }
+  };
+
+  // ─── 右键菜单 → 回档 ──────────────────────────────
+  const handleRollback = (sha: string) => {
+    // 获取该节点的信息用于弹窗
+    const node = graphData?.nodes.find((n) => n.sha === sha) || null;
+    setRollbackSha(sha);
+    setRollbackNode(node);
     setRestoreMsg(null);
   };
 
-  const closeModal = () => {
-    setModalNode(null);
+  const closeRollbackModal = () => {
+    setRollbackSha(null);
+    setRollbackNode(null);
     setRestoreMsg(null);
   };
 
-  // ─── 回档 ──────────────────────────────────────────
-  const handleCheckout = async () => {
-    if (!modalNode) return;
+  const doRollback = async () => {
+    if (!rollbackSha) return;
     setRestoring(true);
     setRestoreMsg(null);
     try {
       const response = await httpClient.post('/api/checkpoints/checkout', {
-        commit_hash: modalNode.sha,
+        commit_hash: rollbackSha,
       });
       if (response.success) {
         setRestoreMsg({ ok: true, text: '回档成功' });
-        await Promise.all([fetchStatus(), fetchCheckpoints(), fetchGraph()]);
+        // 关闭弹窗并刷新
+        setTimeout(() => {
+          closeRollbackModal();
+          Promise.all([fetchStatus(), fetchCheckpoints(), fetchGraph()]);
+        }, 800);
       } else {
         setRestoreMsg({ ok: false, text: response.message || '回档失败' });
       }
@@ -125,7 +174,26 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
     }
   };
 
-  // ─── 变更文件列表 ──────────────────────────────────
+  // ─── 点击变更文件 → 差异对比 ──────────────────────
+  const handleFileClick = (change: FileChangeInfo, commitHash: string) => {
+    const originalContent = change.old_content || '';
+    const modifiedContent = change.new_content || '';
+
+    if (onDiffDisplay) {
+      onDiffDisplay(originalContent, modifiedContent);
+    }
+
+    // 同时 dispatch 到 Redux，给 diff editor 用
+    dispatch(
+      setCheckpointPreview({
+        id: `${commitHash}:${change.path}`,
+        checkpointContent: originalContent,
+        currentContent: modifiedContent,
+      })
+    );
+  };
+
+  // ─── 变更文件列表渲染 ──────────────────────────────
   const renderChangesList = () => {
     if (!status) return null;
     const untrackedChanges: ApiGitChange[] = (
@@ -172,19 +240,19 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
           <h2 className="text-sm font-semibold text-theme-white">当前更改</h2>
         </div>
 
-        <div className="flex gap-2 mb-2">
+        <div className="flex flex-col gap-1.5 mb-2">
           <input
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="存档描述（可选）"
-            className="flex-1 bg-theme-gray2 border border-theme-gray3 text-sm px-2 py-1 rounded outline-none text-theme-white"
+            placeholder="存档描述"
+            className="w-full bg-theme-gray2 border border-theme-gray3 text-sm px-2 py-1 rounded outline-none text-theme-white"
             disabled={loading}
           />
           <button
             onClick={handleSaveCheckpoint}
             disabled={loading}
-            className="bg-theme-green text-black rounded text-sm font-semibold px-3 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full bg-theme-green text-black rounded text-sm font-semibold py-1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? '保存中...' : '保存'}
           </button>
@@ -223,50 +291,55 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
             <GitGraph
               data={graphData}
               onNodeClick={handleNodeClick}
+              onRollback={handleRollback}
+              expandedSha={expandedSha}
+              expandedChanges={expandedChanges}
+              expandedLoading={expandedLoading}
+              onFileClick={handleFileClick}
             />
           )}
         </div>
       </div>
 
       {/* ─── 回档确认弹窗 ────────────────────────────── */}
-      {modalNode && (
+      {rollbackNode && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-          onClick={closeModal}
+          onClick={closeRollbackModal}
         >
           <div
             className="bg-[#1a1a2e] border border-theme-gray3 rounded-lg p-4 min-w-[300px] max-w-[420px] shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* 关闭按钮 */}
+            {/* 关闭 */}
             <div className="flex justify-end mb-1">
               <button
-                onClick={closeModal}
-                className="text-theme-gray4 hover:text-theme-white transition-colors"
+                onClick={closeRollbackModal}
+                className="text-theme-gray4 hover:text-theme-white transition-colors text-sm"
               >
-                <FontAwesomeIcon icon={faXmark} />
+                ✕
               </button>
             </div>
 
-            {/* 哈希值 */}
+            {/* 哈希 */}
             <div className="font-mono text-theme-green text-xs mb-2">
-              {modalNode.sha.slice(0, 8)}
+              {rollbackNode.sha.slice(0, 8)}
             </div>
 
-            {/* 完整 message */}
+            {/* message */}
             <div className="text-sm text-theme-white leading-relaxed mb-3 break-words">
-              {modalNode.message}
+              {rollbackNode.message}
             </div>
 
             {/* 作者 & 日期 */}
             <div className="text-xs text-theme-gray4 mb-4">
-              {modalNode.author && <div>{modalNode.author}</div>}
-              {modalNode.date && (
-                <div>{new Date(modalNode.date).toLocaleString('zh-CN')}</div>
+              {rollbackNode.author && <div>{rollbackNode.author}</div>}
+              {rollbackNode.date && (
+                <div>{new Date(rollbackNode.date).toLocaleString('zh-CN')}</div>
               )}
             </div>
 
-            {/* 回档结果提示 */}
+            {/* 结果提示 */}
             {restoreMsg && (
               <div
                 className={`text-xs px-2 py-1 rounded mb-3 flex items-center gap-1 ${
@@ -282,7 +355,7 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
 
             {/* 回档按钮 */}
             <button
-              onClick={handleCheckout}
+              onClick={doRollback}
               disabled={restoring}
               className="w-full bg-theme-red/20 border border-theme-red/40 text-theme-red text-sm rounded px-3 py-2 hover:bg-theme-red/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >

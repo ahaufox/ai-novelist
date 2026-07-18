@@ -31,6 +31,7 @@ import {
 import { EventsOn } from '../wailsjs/runtime';
 import GitManager from './components/GitManager';
 import WebviewTab from './components/WebviewTab';
+import AuthPanel from './components/auth/AuthPanel';
 
 function App() {
   const dispatch = useDispatch();
@@ -48,7 +49,7 @@ function App() {
 
   const { theme } = useTheme();
   const logRef = useRef<HTMLDivElement>(null);
-  const [mainTab, setMainTab] = useState<'main' | 'version' | 'website' | 'app'>('website');
+  const [mainTab, setMainTab] = useState<'main' | 'version' | 'website' | 'app' | 'auth'>('website');
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appTabReadyRef = useRef(false);
   const [deployed, setDeployed] = useState<boolean>(false);
@@ -70,12 +71,17 @@ function App() {
     }
   }, []);
 
-  // 打开"青烛"标签页：检查前后端状态，决定显示内容
+  // 登录选项卡点击
+  const handleAuthTabClick = useCallback(() => {
+    setMainTab('auth');
+    stopPolling();
+  }, [stopPolling]);
+
+  // 打开"青烛"标签页
   const handleAppTabClick = useCallback(async () => {
     setMainTab('app');
     stopPolling();
 
-    // 查询最新状态
     const beRunning = await BackendRunning();
     const feRunning = await FrontendRunning();
     dispatch(setBackendRunning(beRunning));
@@ -83,13 +89,10 @@ function App() {
 
     if (beRunning && feRunning) {
       if (!appTabReadyRef.current) {
-        // 首次加载 → 刷新 iframe
         appTabReadyRef.current = true;
         refreshIframe();
       }
-      // 非首次（切换标签回来）→ 不自动刷新，保留已有内容
     } else {
-      // 服务未就绪 → 重置标记，下次就绪时重新加载
       appTabReadyRef.current = false;
     }
   }, [dispatch, stopPolling, refreshIframe]);
@@ -104,7 +107,6 @@ function App() {
           ]));
         }
       });
-      // 查询后端/前端运行状态
       BackendRunning().then((r: boolean) => dispatch(setBackendRunning(r)));
       FrontendRunning().then((r: boolean) => dispatch(setFrontendRunning(r)));
     });
@@ -118,7 +120,6 @@ function App() {
     });
 
     const offMainState = EventsOn('main-program-state', () => {
-      // 当后端或前端状态变化时，重新查询
       BackendRunning().then((r: boolean) => dispatch(setBackendRunning(r)));
       FrontendRunning().then((r: boolean) => dispatch(setFrontendRunning(r)));
     });
@@ -140,7 +141,6 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 清理轮询定时器
   useEffect(() => {
     return () => {
       stopPolling();
@@ -277,6 +277,12 @@ function App() {
           版本
         </button>
         <button
+          className={`main-tab ${mainTab === 'auth' ? 'active' : ''}`}
+          onClick={handleAuthTabClick}
+        >
+          登录
+        </button>
+        <button
           className={`main-tab ${mainTab === 'app' ? 'active' : ''}`}
           onClick={handleAppTabClick}
         >
@@ -355,9 +361,11 @@ function App() {
           </>
         ) : mainTab === 'version' ? (
           <GitManager />
+        ) : mainTab === 'auth' ? (
+          <AuthPanel />
         ) : null}
 
-        {/* 始终渲染 iframe，display:none 隐藏不活动的标签页，避免切换时销毁重建 */}
+        {/* 始终渲染 iframe */}
         <iframe
           className="website-frame"
           src="https://denghuominghui.top/"
@@ -366,7 +374,6 @@ function App() {
           sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-top-navigation-by-user-activation allow-popups-to-escape-sandbox"
         />
         <div className="iframe-container" style={{ display: mainTab === 'app' ? 'block' : 'none' }}>
-          {/* 状态面板覆盖层 - 服务未就绪时遮挡 iframe */}
           {(!backendRunning || !frontendRunning) && (
             <div className="app-status-panel">
               <div className="app-status-icon app-status-icon-error">
@@ -393,7 +400,6 @@ function App() {
             </div>
           )}
 
-          {/* iframe 始终渲染，不销毁重建；服务未就绪时被状态面板遮挡 */}
           <iframe
             ref={appFrameRef}
             className="website-frame"
@@ -403,6 +409,7 @@ function App() {
           />
         </div>
       </main>
+
     </div>
   );
 }

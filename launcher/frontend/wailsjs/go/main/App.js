@@ -129,3 +129,37 @@ export function StopGitServer() {
 export function SyncProject() {
   return window['go']['main']['App']['SyncProject']();
 }
+
+// ==================== Auth Methods ====================
+
+export function AuthLogin(username, password) {
+  return window['go']['main']['App']['AuthLogin'](username, password);
+}
+
+export function AuthRegister(email, password, code) {
+  return window['go']['main']['App']['AuthRegister'](email, password, code);
+}
+
+export function AuthSendVerifyCode(email) {
+  return window['go']['main']['App']['AuthSendVerifyCode'](email);
+}
+
+export function AuthSendResetCode(email) {
+  return window['go']['main']['App']['AuthSendResetCode'](email);
+}
+
+export function AuthResetPassword(email, code, password) {
+  return window['go']['main']['App']['AuthResetPassword'](email, code, password);
+}
+
+export function AuthLogout() {
+  return window['go']['main']['App']['AuthLogout']();
+}
+
+export function AuthGetStatus() {
+  return window['go']['main']['App']['AuthGetStatus']();
+}
+
+export function AuthGetUserInfo() {
+  return window['go']['main']['App']['AuthGetUserInfo']();
+}

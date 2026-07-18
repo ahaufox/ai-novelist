@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"launcher/internal/auth"
 	"launcher/internal/backend"
 	"launcher/internal/env"
 	"launcher/internal/frontend"
@@ -32,6 +33,7 @@ type App struct {
 	backendMutex  sync.Mutex
 	frontendMutex sync.Mutex
 	gitServer     *gitservice.Server
+	authService   *auth.AuthService
 }
 
 func NewApp() *App {
@@ -62,6 +64,14 @@ func (a *App) startup(ctx context.Context) {
 		}
 		a.Logf("[INFO] 环境变量已就绪，共 %d 个", len(envVars))
 	}
+
+	// 初始化认证服务
+	tokenFile := os.Getenv("AI_NOVELIST_AUTH_TOKEN_FILE")
+	if tokenFile == "" {
+		tokenFile = filepath.Join(exeDir, "data", "auth", "tokens.json")
+	}
+	a.authService = auth.NewAuthService(tokenFile)
+	a.Logf("[INFO] 认证服务已初始化")
 }
 
 // StartGitServer 启动Git HTTP服务
@@ -532,4 +542,46 @@ func (a *App) OpenWebviewTab(title string, url string) {
 			"url":   url,
 		})
 	}
+}
+
+// ==================== 认证方法 ====================
+
+// AuthLogin 登录
+func (a *App) AuthLogin(username, password string) (*auth.LoginResult, error) {
+	return a.authService.Login(username, password)
+}
+
+// AuthRegister 注册
+func (a *App) AuthRegister(email, password, code string) error {
+	return a.authService.Register(email, password, code)
+}
+
+// AuthSendVerifyCode 发送注册验证码
+func (a *App) AuthSendVerifyCode(email string) error {
+	return a.authService.SendVerifyCode(email)
+}
+
+// AuthSendResetCode 发送重置密码验证码
+func (a *App) AuthSendResetCode(email string) error {
+	return a.authService.SendResetCode(email)
+}
+
+// AuthResetPassword 重置密码
+func (a *App) AuthResetPassword(email, code, password string) error {
+	return a.authService.ResetPassword(email, code, password)
+}
+
+// AuthLogout 登出
+func (a *App) AuthLogout() error {
+	return a.authService.Logout()
+}
+
+// AuthGetStatus 获取登录状态
+func (a *App) AuthGetStatus() *auth.AuthStatus {
+	return a.authService.GetAuthStatus()
+}
+
+// AuthGetUserInfo 获取用户信息
+func (a *App) AuthGetUserInfo() (*auth.UserInfo, error) {
+	return a.authService.GetUserInfo()
 }

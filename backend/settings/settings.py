@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sqlite3
@@ -165,6 +166,9 @@ class Settings:
 
     def save_tokens(self, access_token: str, refresh_token: Optional[str] = None):
         """保存 token 到 data/auth/tokens.json"""
+        # 确保目录存在；若被误删，自动重建
+        os.makedirs(self.AUTH_TOKEN_DIR, exist_ok=True)
+
         data = {"access_token": access_token}
         if refresh_token:
             data["refresh_token"] = refresh_token
