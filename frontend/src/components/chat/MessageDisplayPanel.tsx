@@ -224,7 +224,7 @@ const MessageDisplayPanel = () => {
           return;
         }
 
-        if (!currentAiMessageId && (parsedChunk.content || parsedChunk.tool_calls?.length)) {
+        if (!currentAiMessageId && (parsedChunk.content || parsedChunk.reasoning_content || parsedChunk.tool_calls?.length)) {
           const aiMessageId = generateMessageId();
           currentAiMessageId = aiMessageId;
           dispatch(createAiMessage({ id: aiMessageId }));
@@ -366,7 +366,7 @@ const MessageDisplayPanel = () => {
           return;
         }
 
-        if (!currentAiMessageId && (parsedChunk.content || parsedChunk.tool_calls?.length)) {
+        if (!currentAiMessageId && (parsedChunk.content || parsedChunk.reasoning_content || parsedChunk.tool_calls?.length)) {
           const aiMessageId = generateMessageId();
           currentAiMessageId = aiMessageId;
           dispatch(createAiMessage({ id: aiMessageId }));

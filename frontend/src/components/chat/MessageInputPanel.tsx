@@ -229,8 +229,8 @@ const MessageInputPanel = () => {
           continue;
         }
 
-        // 首次收到内容时创建 AI message（tool_calls 由 tool_requests 机制处理）
-        if (!currentAiMessageId && parsedChunk.content) {
+        // 首次收到内容或推理内容时创建 AI message（tool_calls 由 tool_requests 机制处理）
+        if (!currentAiMessageId && (parsedChunk.content || parsedChunk.reasoning_content)) {
           const aiMessageId = generateMessageId();
           currentAiMessageId = aiMessageId;
           dispatch(createAiMessage({ id: aiMessageId }));
