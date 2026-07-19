@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { readBinaryFrames } from '../../utils/binaryFrameReader';
 import { useDispatch, useSelector } from 'react-redux';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -19,6 +19,18 @@ const MessageDisplayPanel = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [expandedToolResults, setExpandedToolResults] = useState<Set<string>>(new Set());
+
+  // 思维链默认全部展开（随消息加载自动填充）
+  const initExpandedReasonings = useCallback((msgs: Message[]) => {
+    const ids = msgs
+      .filter(m => m.role === 'assistant' && Boolean(m.additional_kwargs?.reasoning_content))
+      .map(m => m.id);
+    setExpandedReasonings(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      return next;
+    });
+  }, []);
   const [expandedReasonings, setExpandedReasonings] = useState<Set<string>>(new Set());
   const emptyMessages: Message[] = [];
   const emptyInterrupts: any[] = [];
@@ -50,6 +62,11 @@ const MessageDisplayPanel = () => {
   // 从Redux获取中断状态
   const interrupts = useSelector((state: RootState) => state.chatSlice.state?.interrupts || emptyInterrupts);
   const isInterrupted = interrupts.length > 0;
+
+  // 新消息加载时自动展开思维链
+  useEffect(() => {
+    initExpandedReasonings(messages);
+  }, [messages, initExpandedReasonings]);
 
   // 加载可用工具数据
   useEffect(() => {
@@ -524,20 +541,26 @@ const MessageDisplayPanel = () => {
       return (
         <div
           key={msg.id}
-          className="flex flex-col w-[80%] self-start bg-theme-gray1 border border-theme-green p-2.5 rounded-medium break-words overflow-wrap break-word"
+          className="flex flex-col w-full px-4"
         >
-          <div className="flex items-center">
-            <div className="flex items-center cursor-pointer" onClick={() => toggleToolResultExpand(msg.id)}>
-              <FontAwesomeIcon icon={isExpanded ? faAngleUp : faAngleRight} className="text-theme-green hover:text-theme-white text-xs mr-2" />
-              <span className="font-bold text-[0.9em] text-theme-white">工具</span>
+          <div className="font-bold text-[0.9em] text-theme-white mb-1">工具</div>
+          <div
+            className="border border-theme-gray3/40 hover:border-theme-green bg-theme-gray1/60 p-2.5 rounded-medium break-words overflow-wrap break-word cursor-pointer"
+            onClick={() => toggleToolResultExpand(msg.id)}
+          >
+            <div className="flex items-center gap-2">
+              <FontAwesomeIcon icon={isExpanded ? faAngleUp : faAngleRight} className="text-theme-green text-xs" />
+              <span className="font-bold text-[0.9em] text-theme-green">
+                {isExpanded ? '收起' : '展开'}
+              </span>
             </div>
-          </div>
-          <div className="leading-[1.4] overflow-wrap break-word break-words text-theme-white mt-1">
-            {isExpanded ? (
-              <MarkdownRenderer content={extractContentText(msg.content || '')} />
-            ) : (
-              <div className="text-sm">{previewContent}</div>
-            )}
+            <div className="leading-[1.4] overflow-wrap break-word break-words text-theme-white mt-1">
+              {isExpanded ? (
+                <MarkdownRenderer content={extractContentText(msg.content || '')} />
+              ) : (
+                <div className="text-sm">{previewContent}</div>
+              )}
+            </div>
           </div>
         </div>
       );
@@ -551,138 +574,140 @@ const MessageDisplayPanel = () => {
     return (
       <div
         key={msg.id}
-        className={`flex flex-col w-[80%] ${
-          isUser ? 'self-end' : 'self-start'
-        }`}
+        className="flex flex-col w-full px-4"
       >
-        {/* 消息气泡 */}
-        <div
-          className={`flex flex-col w-full p-2.5 rounded-medium break-words overflow-wrap break-word ${
-            isUser
-              ? 'bg-theme-green1 text-theme-white'
-              : 'bg-theme-gray2 text-theme-white'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1">
-            <div className="font-bold text-[0.9em]">
-              {isEditing ? '编辑消息' : (isUser ? '用户' : 'AI')}
+        {/* 消息标签 */}
+        <div className="font-bold text-[0.9em] text-theme-white mb-1.5">
+          {isEditing ? '编辑消息' : (isUser ? '用户' : 'AI')}
+        </div>
+
+        {isEditing ? (
+          /* ===== 编辑模式 ===== */
+          <div className="flex flex-col gap-2">
+            <textarea
+              className="w-full bg-theme-gray1 text-theme-white p-2.5 rounded-medium border border-theme-gray3 focus:border-theme-green outline-none resize-none"
+              rows={6}
+              value={editingContent}
+              onChange={(e) => setEditingContent(e.target.value)}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                className="px-4 py-2 rounded-small bg-theme-gray3 text-theme-white hover:bg-theme-gray4 transition-colors"
+                onClick={cancelEdit}
+              >
+                取消
+              </button>
+              <button
+                className="px-4 py-2 rounded-small bg-theme-green text-theme-white hover:bg-theme-green1 transition-colors"
+                onClick={() => confirmEdit(msg.id, editingContent)}
+              >
+                确定并重新生成
+              </button>
             </div>
           </div>
-          <div className="leading-[1.4] overflow-wrap break-word break-words">
-            {isEditing ? (
-              <div className="flex flex-col gap-2">
-                <textarea
-                  className="w-full bg-theme-gray1 text-theme-white p-2 rounded-small border border-theme-gray3 focus:border-theme-green outline-none resize-none"
-                  rows={6}
-                  value={editingContent}
-                  onChange={(e) => setEditingContent(e.target.value)}
-                  autoFocus
-                />
-                <div className="flex justify-end gap-2">
-                  <button
-                    className="px-4 py-2 rounded-small bg-theme-gray3 text-theme-white hover:bg-theme-gray4 transition-colors"
-                    onClick={cancelEdit}
-                  >
-                    取消
-                  </button>
-                  <button
-                    className="px-4 py-2 rounded-small bg-theme-green text-theme-white hover:bg-theme-green1 transition-colors"
-                    onClick={() => confirmEdit(msg.id, editingContent)}
-                  >
-                    确定并重新生成
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                {isUser ? (
-                  <MarkdownRenderer content={preprocessUserContent(msg.content || '')} />
-                ) : (
-                  <div>
-                    {msg.role === 'assistant' && Boolean(msg.additional_kwargs?.reasoning_content) && (
-                      <div className="mt-2 p-2 bg-black/20 rounded-small">
-                        <div className="flex items-center gap-2">
-                          <FontAwesomeIcon
-                            icon={expandedReasonings.has(msg.id) ? faAngleUp : faAngleRight}
-                            className="text-xs text-theme-green cursor-pointer hover:text-theme-white"
-                            onClick={() => toggleReasoningExpand(msg.id)}
-                          />
-                          <span className="font-bold text-theme-green">思维链</span>
+        ) : (
+          /* ===== 展示模式 ===== */
+          <div>
+            {/* 主内容区 */}
+            <div
+              className={`leading-[1.5] overflow-wrap break-word break-words p-3 rounded-medium ${
+                isUser
+                  ? 'border border-theme-gray3/60 bg-theme-gray1/80 text-theme-white'
+                  : 'border border-transparent hover:border-theme-gray3/40 text-theme-white'
+              }`}
+            >
+              {isUser ? (
+                <MarkdownRenderer content={preprocessUserContent(msg.content || '')} />
+              ) : (
+                <>
+                  {/* AI：先显示思维链（独立全宽） */}
+                  {msg.role === 'assistant' && Boolean(msg.additional_kwargs?.reasoning_content) && (
+                    <div className="mb-3">
+                      <div
+                        className="flex items-center gap-2 cursor-pointer select-none"
+                        onClick={() => toggleReasoningExpand(msg.id)}
+                      >
+                        <FontAwesomeIcon
+                          icon={expandedReasonings.has(msg.id) ? faAngleUp : faAngleRight}
+                          className="text-xs text-theme-green"
+                        />
+                        <span className="font-bold text-theme-green text-[0.85em]">思维链</span>
+                      </div>
+                      {expandedReasonings.has(msg.id) && (
+                        <div className="mt-1.5 text-[0.85em] text-theme-white/70 whitespace-pre-wrap break-words leading-relaxed">
+                          {msg.additional_kwargs?.reasoning_content as string}
                         </div>
-                        {expandedReasonings.has(msg.id) && (
-                          <div className="mt-1 text-[0.8em] text-theme-white whitespace-pre-wrap break-words">
-                            {msg.additional_kwargs?.reasoning_content as string}
-                          </div>
+                      )}
+                    </div>
+                  )}
+                  {/* AI：主回复内容 */}
+                  <MarkdownRenderer content={extractContentText(msg.content || '')} />
+                </>
+              )}
+            </div>
+
+            {/* AI-only：工具调用（独立全宽区块） */}
+            {!isUser && msg.tool_calls && msg.tool_calls.length > 0 && (
+              <div className="mt-2 border border-theme-gray3/30 hover:border-theme-gray3/60 rounded-medium p-2.5 transition-colors">
+                {msg.tool_calls!.map((toolCall, toolIndex) => {
+                  const toolKey = `${msg.id}-${toolIndex}`;
+                  const isExpanded = !expandedTools.has(toolKey);
+                  const tcName = toolCall.function?.name || '';
+                  const tcArgsStr = toolCall.function?.arguments || '';
+                  let parsedArgs: any = {};
+                  let isArgsValid = false;
+                  try {
+                    parsedArgs = JSON.parse(tcArgsStr);
+                    isArgsValid = true;
+                  } catch { /* 参数未完整，使用原始字符串 */ }
+                  const path = isArgsValid && parsedArgs && typeof parsedArgs === 'object' && 'path' in parsedArgs ? parsedArgs.path : null;
+                  
+                  return (
+                    <div key={toolIndex} className={toolIndex > 0 ? 'mt-2 pt-2 border-t border-theme-gray3/20' : ''}>
+                      <div className="flex items-center gap-2">
+                        <FontAwesomeIcon
+                          icon={isExpanded ? faAngleUp : faAngleRight}
+                          className="text-xs text-theme-green cursor-pointer hover:text-theme-white"
+                          onClick={() => toggleToolExpand(msg.id, toolIndex)}
+                        />
+                        <span className="font-bold text-theme-green text-[0.85em]">
+                          {availableTools[tcName]?.name || tcName || '未知工具'}
+                        </span>
+                        {path && (
+                          <span className="text-xs text-theme-gray3">{path}</span>
                         )}
                       </div>
-                    )}
-                    <MarkdownRenderer content={extractContentText(msg.content || '')} />
-                    {msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0 && (
-                      <div className="mt-2 p-2 bg-black/20 rounded-small">
-                        {msg.tool_calls!.map((toolCall, toolIndex) => {
-                          const toolKey = `${msg.id}-${toolIndex}`;
-                          const isExpanded = !expandedTools.has(toolKey);
-                          const tcName = toolCall.function?.name || '';
-                          const tcArgsStr = toolCall.function?.arguments || '';
-                          let parsedArgs: any = {};
-                          let isArgsValid = false;
-                          try {
-                            parsedArgs = JSON.parse(tcArgsStr);
-                            isArgsValid = true;
-                          } catch { /* 参数未完整，使用原始字符串 */ }
-                          const path = isArgsValid && parsedArgs && typeof parsedArgs === 'object' && 'path' in parsedArgs ? parsedArgs.path : null;
-                          
-                          return (
-                            <div key={toolIndex} className="mb-1.5 p-1 bg-black/10 rounded-small">
-                              <div className="flex items-center gap-2">
-                                <FontAwesomeIcon
-                                  icon={isExpanded ? faAngleUp : faAngleRight}
-                                  className="text-xs text-theme-green cursor-pointer hover:text-theme-white"
-                                  onClick={() => toggleToolExpand(msg.id, toolIndex)}
-                                />
-                                <span className="font-bold text-theme-green">
-                                  {availableTools[tcName]?.name || tcName || '未知工具'}
-                                </span>
-                                {path && (
-                                  <span className="text-xs text-theme-gray3">
-                                    {path}
-                                  </span>
-                                )}
-                              </div>
-                              {isExpanded && tcArgsStr && (
-                                <div className="mt-1 text-[0.8em] text-theme-white whitespace-pre-wrap break-words">
-                                  {!isArgsValid ? (
-                                    `加载中... ${tcArgsStr}`
-                                  ) : (() => {
-                                      const content = parsedArgs.content;
-                                      if (content !== undefined) {
-                                        return content;
-                                      }
-                                      const result: Record<string, any> = {};
-                                      for (const [key, value] of Object.entries(parsedArgs)) {
-                                        if (key !== 'content') {
-                                          result[key] = value;
-                                        }
-                                      }
-                                      return JSON.stringify(result, null, 2);
-                                    })()}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
+                      {isExpanded && tcArgsStr && (
+                        <div className="mt-1 text-[0.85em] text-theme-white/80 whitespace-pre-wrap break-words">
+                          {!isArgsValid ? (
+                            `加载中... ${tcArgsStr}`
+                          ) : (() => {
+                              const content = parsedArgs.content;
+                              if (content !== undefined) {
+                                return content;
+                              }
+                              const result: Record<string, any> = {};
+                              for (const [key, value] of Object.entries(parsedArgs)) {
+                                if (key !== 'content') {
+                                  result[key] = value;
+                                }
+                              }
+                              return JSON.stringify(result, null, 2);
+                            })()}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
-        </div>
-        
-        {/* 气泡下方的操作栏（编辑模式下隐藏） */}
+        )}
+
+        {/* 操作栏（编辑模式下隐藏） */}
         {!isEditing && (
-          <div className="flex items-center justify-between mt-1 px-1">
+          <div className="flex items-center justify-between mt-1.5 px-0.5">
             {/* 按钮组 */}
             <div className="flex gap-2">
               <button
@@ -732,7 +757,7 @@ const MessageDisplayPanel = () => {
 
         {/* 分支翻页器（仅对用户消息且是分支点显示） */}
         {isUser && bpInfo && bpInfo.total > 1 && !isEditing && (
-          <div className="flex items-center justify-center gap-2 mt-1">
+          <div className="flex items-center justify-center gap-2 mt-1.5">
             <button
               className="text-xs text-theme-gray3 hover:text-theme-green transition-colors disabled:opacity-30"
               disabled={bpInfo.current_index === 0}
@@ -777,8 +802,8 @@ const MessageDisplayPanel = () => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-2.5 flex flex-col relative">
-      <div className="flex-1 overflow-y-auto mt-2.5 flex flex-col gap-2">
+    <div className="flex-1 overflow-y-auto py-2.5 flex flex-col relative">
+      <div className="flex-1 overflow-y-auto flex flex-col gap-3">
         {messages.map(renderMessage)}
         <div ref={messagesEndRef} />
       </div>
