@@ -193,6 +193,24 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
     );
   };
 
+  // ─── 当前更改 → 打开差异对比（允许修改） ──────────
+  const handleShowFileDiff = async (filePath: string) => {
+    try {
+      const response = await httpClient.get(`/api/checkpoints/working-diff/${filePath}`);
+      if (response.success) {
+        dispatch(
+          setCheckpointPreview({
+            id: filePath,
+            checkpointContent: response.old_content || '',
+            currentContent: response.new_content || '',
+          })
+        );
+      }
+    } catch (error) {
+      console.error('获取文件差异失败:', error);
+    }
+  };
+
   // ─── 变更文件列表渲染 ──────────────────────────────
   const renderChangesList = () => {
     if (!status) return null;
@@ -215,6 +233,7 @@ const CheckpointPanel = ({ onDiffDisplay }: CheckpointPanelProps) => {
       <div
         key={`change-${index}`}
         className="flex items-center gap-2 px-2 py-1 hover:bg-theme-gray2 rounded cursor-pointer transition-colors"
+        onClick={() => handleShowFileDiff(change.path)}
       >
         <FontAwesomeIcon
           icon={faFile}
