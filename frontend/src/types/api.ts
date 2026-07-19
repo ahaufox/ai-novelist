@@ -2,48 +2,13 @@
  * API 相关类型定义
  */
 
-// ==================== Auth API 类型 ====================
-
-/** 发送验证码请求（注册/重置共用） */
-export interface SendCodeRequest {
-  email: string;
-}
-
-/** 注册请求 */
-export interface RegisterRequest {
-  email: string;
-  password: string;
-  code: string;
-}
-
-/** 登录请求 */
-export interface LoginRequest {
-  username: string; // 邮箱地址
-  password: string;
-}
-
-/** 重置密码请求 */
-export interface ResetPasswordRequest {
-  email: string;
-  code: string;
-  password: string;
-}
-
-/** 用户信息 */
-export interface UserInfo {
-  id: string;
-  email: string;
-  is_active: boolean;
-  is_superuser: boolean;
-  is_verified: boolean;
-}
+// ==================== 通用 API 类型 ====================
 
 /** API 错误响应 */
 export interface ApiError {
   detail: string;
 }
 
-// ==================== 通用 API 类型 ====================
 
 /** 通用 API 响应 */
 export interface ApiResponse<T = any> {

@@ -84,10 +84,6 @@ export type {
   FileOperationRequest,
   RenameRequest,
   HealthStatus,
-  // Auth
-  LoginRequest,
-  RegisterRequest,
-  UserInfo,
   ApiError,
   // Git Checkpoint
   ApiCheckpoint,

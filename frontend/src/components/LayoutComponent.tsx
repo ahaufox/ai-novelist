@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { PanelGroup, Panel, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { addTab, setActiveTab } from '../store/editor';
-import type { RootState, LayoutComponentProps } from '../types';
+import type { LayoutComponentProps } from '../types';
 import SidebarComponent from './SidebarComponent';
 import ProviderSettingsPanel from './aiprovider/ProviderSettingsPanel';
 import RagManagementPanel from './rag/KnowledgeBasePanel';
@@ -12,14 +12,10 @@ import TopActionBar from './others/TopActionBar';
 import SearchPanel from './search/SearchPanel';
 import CheckpointPanel from './checkpoint/CheckpointPanel';
 import httpClient from '../utils/httpClient';
-import LoginPanel from './auth/LoginPanel';
-import UserPanel from './auth/UserPanel';
-import ForgotPasswordPanel from './auth/ForgotPasswordPanel';
 import { ThemeSettingsPanel } from './theme';
 
 function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutComponentProps) {
   const dispatch = useDispatch();
-  const { isAuthenticated } = useSelector((state: RootState) => state.authSlice);
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
   const [leftPanelContent, setLeftPanelContent] = useState<'chapter' | 'search' | 'checkpoint'>('chapter');
@@ -62,18 +58,6 @@ function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutCompone
   };
 
 
-  // 认证弹窗状态：'login' | 'user' | 'forgot' | null
-  const [authModal, setAuthModal] = useState<'login' | 'user' | 'forgot' | null>(null);
-
-  // 处理用户图标点击：已登录显示用户面板，未登录显示登录弹窗
-  const handleUserClick = useCallback(() => {
-    if (isAuthenticated) {
-      setAuthModal('user');
-    } else {
-      setAuthModal('login');
-    }
-  }, [isAuthenticated]);
-
   // 主题设置弹窗状态
   const [showThemeSettings, setShowThemeSettings] = useState(false);
 
@@ -103,7 +87,6 @@ function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutCompone
             <SidebarComponent
               activePanel={activePanel}
               setActivePanel={setActivePanel}
-              onUserClick={handleUserClick}
               onSettingsClick={() => setShowThemeSettings(true)}
             />
           </div>
@@ -165,23 +148,6 @@ function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutCompone
               <MCPSettingsPanel />
             )}
           </div>
-        )}
-
-        {/* 认证弹窗组 */}
-        {authModal === 'login' && (
-          <LoginPanel
-            onClose={() => setAuthModal(null)}
-            onForgotPassword={() => setAuthModal('forgot')}
-          />
-        )}
-        {authModal === 'user' && (
-          <UserPanel onClose={() => setAuthModal(null)} />
-        )}
-        {authModal === 'forgot' && (
-          <ForgotPasswordPanel
-            onClose={() => setAuthModal(null)}
-            onBackToLogin={() => setAuthModal('login')}
-          />
         )}
 
         {/* 主题设置弹窗 */}

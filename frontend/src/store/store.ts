@@ -6,8 +6,6 @@ import knowledgeReducer from './knowledge'
 import modeReducer from './mode'
 import chatReducer from './chat'
 import mcpReducer from './mcp'
-import authReducer from './auth'
-export type { AuthState } from './auth'
 
 export const store = configureStore({
   reducer: {
@@ -18,6 +16,5 @@ export const store = configureStore({
     modeSlice: modeReducer,
     chatSlice: chatReducer,
     mcpSlice: mcpReducer,
-    authSlice: authReducer,
   },
 })

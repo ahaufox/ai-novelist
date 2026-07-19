@@ -6,16 +6,10 @@ import {
   faPencil,
   faServer,
   faGear,
-  faRightToBracket,
-  faUser,
 } from '@fortawesome/free-solid-svg-icons';
-import { useSelector } from 'react-redux';
 import type { SidebarComponentProps, SidebarItem } from '../types';
-import type { RootState } from '../types/store';
 
-const SidebarComponent = ({ activePanel, setActivePanel, onUserClick, onSettingsClick }: SidebarComponentProps) => {
-  const { isAuthenticated, user } = useSelector((state: RootState) => state.authSlice);
-
+const SidebarComponent = ({ activePanel, setActivePanel, onSettingsClick }: SidebarComponentProps) => {
   // 顶部面板项目
   const topSidebarItems: SidebarItem[] = [
     { id: 'home', icon: faPencil, label: '首页', panelId: null },
@@ -62,17 +56,6 @@ const SidebarComponent = ({ activePanel, setActivePanel, onUserClick, onSettings
         >
           <FontAwesomeIcon
             icon={faGear}
-            className="text-[18px] text-theme-white hover:text-theme-green"
-          />
-        </div>
-        {/* 登录/用户按钮 */}
-        <div
-          className="flex items-center justify-center p-3 cursor-pointer border-l-[3px] border-transparent relative"
-          onClick={onUserClick}
-          title={isAuthenticated && user ? user.email : '登录'}
-        >
-          <FontAwesomeIcon
-            icon={isAuthenticated ? faUser : faRightToBracket}
             className="text-[18px] text-theme-white hover:text-theme-green"
           />
         </div>

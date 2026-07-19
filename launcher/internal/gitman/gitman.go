@@ -250,12 +250,6 @@ func CreateBranch(projectDir string, name string) error {
 	return gitutil.RunIn(projectDir, "branch", name)
 }
 
-// GetFullCommitGraph 获取全仓库的提交图（包含所有分支可达的 commit）
-// 注意：此函数将逐步被 GetGraphOutput 替代
-func GetFullCommitGraph(projectDir string, limit int) ([]CommitDetail, error) {
-	return GetCommitHistory(projectDir, limit)
-}
-
 // GetAllCommitDetails 获取所有分支的提交详情（带 --all 标志，按时间倒序）
 func GetAllCommitDetails(projectDir string, limit int) ([]CommitDetail, error) {
 	out, err := gitutil.OutputIn(projectDir, "log", "--all", logFormat, fmt.Sprintf("--max-count=%d", limit))
@@ -277,82 +271,6 @@ func parseCommitOutput(out string) []CommitDetail {
 		}
 	}
 	return commits
-}
-
-// GraphLine 分支图中的一行（可能是 commit 行或连接线）
-type GraphLine struct {
-	Graph    string `json:"graph"`     // ASCII 图前缀
-	Hash     string `json:"hash"`      // commit hash（连接线行为空）
-	Parents  string `json:"parents"`   // 父 commit hash（连接线行为空）
-	Message  string `json:"message"`   // commit message 首行（连接线行为空）
-	Author   string `json:"author"`    // 作者（连接线行为空）
-	Date     string `json:"date"`      // ISO 日期（连接线行为空）
-	Refs     string `json:"refs"`      // refs 字符串（连接线行为空）
-	IsCommit bool   `json:"is_commit"` // 是否为 commit 行
-}
-
-// GetGraphOutput 获取完整分支图输出。
-// 分两步避免 Windows 命令行传递分隔符被破坏的问题：
-//  1. git log --graph --all --format=%H   → 只拿 graph 前缀 + SHA（纯 hex，无需分隔符）
-//  2. GetAllCommitDetails                 → 复用已有的可靠 commit 详情解析
-//  3. 在 Go 中按 SHA 合并
-func GetGraphOutput(projectDir string, maxCount int) ([]GraphLine, error) {
-	// 步骤 1：获取 graph 拓扑（只需 SHA，无分隔符问题）
-	graphOut, err := gitutil.CombinedOutputIn(projectDir,
-		"log", "--graph", "--all",
-		"--format=%H",
-		fmt.Sprintf("--max-count=%d", maxCount),
-	)
-	if err != nil {
-		return []GraphLine{}, nil
-	}
-	if graphOut == "" {
-		return []GraphLine{}, nil
-	}
-
-	// 步骤 2：获取 commit 详情（已有可靠实现）
-	details, err := GetAllCommitDetails(projectDir, maxCount)
-	if err != nil {
-		details = []CommitDetail{}
-	}
-	detailMap := make(map[string]CommitDetail, len(details))
-	for _, d := range details {
-		detailMap[d.SHA] = d
-	}
-
-	// 步骤 3：解析 graph 输出并合并详情
-	var lines []GraphLine
-	for _, line := range strings.Split(graphOut, "\n") {
-		line = strings.TrimRight(line, "\r")
-		if line == "" {
-			continue
-		}
-
-		sha := extractTrailingSHA(line)
-		if sha != "" {
-			// commit 行：graph 前缀 = 整行去掉末尾 40 位 SHA
-			graphPrefix := line[:len(line)-40]
-			d := detailMap[sha]
-			lines = append(lines, GraphLine{
-				Graph:    graphPrefix,
-				Hash:     sha,
-				Parents:  strings.Join(d.Parents, " "),
-				Message:  d.Message,
-				Author:   d.Author,
-				Date:     d.Date,
-				Refs:     strings.Join(d.Refs, ", "),
-				IsCommit: true,
-			})
-		} else {
-			// 连接线行（|\  |/  等）
-			lines = append(lines, GraphLine{
-				Graph:    line,
-				IsCommit: false,
-			})
-		}
-	}
-
-	return lines, nil
 }
 
 // extractTrailingSHA 提取行末的 40 位 hex SHA，若不是则返回 ""
@@ -406,13 +324,14 @@ type GraphOutput struct {
 
 // NodeData 单个 commit 节点
 type NodeData struct {
-	Row     int    `json:"row"`
-	Lane    int    `json:"lane"`
-	SHA     string `json:"sha"`
-	Message string `json:"message"`
-	Author  string `json:"author"`
-	Date    string `json:"date"`
-	Color   string `json:"color"`
+	Row     int      `json:"row"`
+	Lane    int      `json:"lane"`
+	SHA     string   `json:"sha"`
+	Message string   `json:"message"`
+	Author  string   `json:"author"`
+	Date    string   `json:"date"`
+	Color   string   `json:"color"`
+	Refs    []string `json:"refs"`
 }
 
 // DualGraphOutput 双仓库分支图输出
@@ -506,6 +425,7 @@ func GetStructuredGraph(projectDir string, maxCount int) (*GraphOutput, error) {
 						Message: d.Message,
 						Author:  d.Author,
 						Date:    d.Date,
+						Refs:    d.Refs,
 					})
 				}
 			} else {

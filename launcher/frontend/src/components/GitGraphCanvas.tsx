@@ -7,12 +7,26 @@ const DOT_R = 5;
 const HEAD_R = 8;
 const PAD_L = 16;
 const PAD_T = 16;
-const MSG_X = 320;
+const MSG_X = 280;
+const BADGE_GAP = 4;    // ref badge 间距
+const BADGE_H = 16;     // ref badge 高度
 
 interface Props {
   data: gitman.DualGraphOutput | null;
   onCheckout?: (sha: string) => void;
   checkoutLoading?: boolean;
+}
+
+/** 从 refs 列表中提取可显示的分支名（过滤掉 HEAD、origin/HEAD） */
+function getBranchRefs(refs: string[]): string[] {
+  const out: string[] = [];
+  for (const r of refs) {
+    const name = r.replace(/^HEAD -> /, '').trim();
+    if (name && name !== 'HEAD' && name !== 'origin/HEAD') {
+      out.push(name);
+    }
+  }
+  return out;
 }
 
 export default function GitGraphCanvas({ data, onCheckout, checkoutLoading }: Props) {
@@ -27,8 +41,6 @@ export default function GitGraphCanvas({ data, onCheckout, checkoutLoading }: Pr
 
   const y = (row: number) => PAD_T + row * ROW_H;
   const x = (lane: number) => PAD_L + lane * LANE_W + LANE_W / 2;
-
-  const workingNode = nodes.find(n => n.sha === working_head);
 
   return (
     <div className="git-graph-canvas-container" style={{ position: 'relative', overflow: 'auto', height: '100%' }}>
@@ -48,11 +60,12 @@ export default function GitGraphCanvas({ data, onCheckout, checkoutLoading }: Pr
           );
         })}
 
-        {/* 2. 圆点 + message */}
+        {/* 2. 圆点 + message + ref 标签 */}
         {nodes.map((n) => {
           const cx = x(n.lane);
           const cy = y(n.row);
           const isHead = n.sha === working_head;
+          const branchRefs = getBranchRefs(n.refs || []);
           return (
             <g key={n.sha}>
               {/* 如果是 working HEAD，画一个光环 */}
@@ -81,6 +94,30 @@ export default function GitGraphCanvas({ data, onCheckout, checkoutLoading }: Pr
                   HEAD
                 </text>
               )}
+              {/* 分支名标签（ref badge） */}
+              {branchRefs.map((ref, idx) => {
+                const badgeX = MSG_X - 8;
+                const badgeY = cy - BADGE_H - BADGE_GAP - idx * (BADGE_H + BADGE_GAP);
+                return (
+                  <g key={ref}>
+                    <rect
+                      x={badgeX} y={badgeY}
+                      width={8 + ref.length * 7.5} height={BADGE_H}
+                      rx={3} ry={3}
+                      fill={n.color} fillOpacity={0.25}
+                      stroke={n.color} strokeWidth={1}
+                    />
+                    <text
+                      x={badgeX + 4} y={badgeY + BADGE_H - 4}
+                      fontSize={10} fontWeight={500}
+                      fill={n.color} dominantBaseline="middle"
+                    >
+                      {ref}
+                    </text>
+                  </g>
+                );
+              })}
+              {/* message */}
               <text x={MSG_X} y={cy + 4} fontSize={12} fill="#ccc" dominantBaseline="middle">
                 {n.message.slice(0, 80)}{n.message.length > 80 ? '…' : ''}
               </text>
@@ -106,6 +143,20 @@ export default function GitGraphCanvas({ data, onCheckout, checkoutLoading }: Pr
             ✕
           </div>
           <div style={{ color: '#FFD700', fontFamily: 'monospace' }}>{tooltip.sha.slice(0, 8)}</div>
+          {/* tooltip 内也显示分支名 */}
+          {tooltip.refs && tooltip.refs.length > 0 && (
+            <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {getBranchRefs(tooltip.refs).map(ref => (
+                <span key={ref} style={{
+                  display: 'inline-block', padding: '1px 6px', borderRadius: 3,
+                  fontSize: 11, fontWeight: 500, color: '#000',
+                  background: tooltip.color || '#888',
+                }}>
+                  {ref}
+                </span>
+              ))}
+            </div>
+          )}
           <div style={{ margin: '6px 0', lineHeight: 1.5 }}>{tooltip.message}</div>
           <div style={{ color: '#888', fontSize: 12 }}>{tooltip.author}</div>
           <div style={{ color: '#888', fontSize: 12 }}>

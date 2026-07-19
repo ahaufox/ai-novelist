@@ -438,11 +438,6 @@ func (a *App) GitHistory(limit int) ([]gitman.CommitDetail, error) {
 	return gitman.GetCommitHistory(projectDir, limit)
 }
 
-func (a *App) GitFullGraph(limit int) ([]gitman.CommitDetail, error) {
-	projectDir := a.getProjectDir()
-	return gitman.GetFullCommitGraph(projectDir, limit)
-}
-
 func (a *App) GitBranches() ([]gitman.BranchInfo, error) {
 	projectDir := a.getProjectDir()
 	return gitman.GetBranches(projectDir)
@@ -461,23 +456,6 @@ func (a *App) GitSwitchBranch(name string) error {
 func (a *App) GitCreateBranch(name string) error {
 	projectDir := a.getProjectDir()
 	return gitman.CreateBranch(projectDir, name)
-}
-
-func (a *App) GitGraphOutput(maxCount int) ([]gitman.GraphLine, error) {
-	projectDir := a.getProjectDir()
-	return gitman.GetGraphOutput(projectDir, maxCount)
-}
-
-// GitStructuredGraph 返回结构化的分支图数据（替换 GitGraphOutput）
-// Go 端完成所有解析和颜色分配，前端纯渲染
-func (a *App) GitStructuredGraph(maxCount int) (*gitman.GraphOutput, error) {
-	projectDir := a.getProjectDir()
-	return gitman.GetStructuredGraph(projectDir, maxCount)
-}
-
-func (a *App) GitAllCommits(maxCount int) ([]gitman.CommitDetail, error) {
-	projectDir := a.getProjectDir()
-	return gitman.GetAllCommitDetails(projectDir, maxCount)
 }
 
 // GitDualGraph 获取基准仓库完整图 + 可变仓库 HEAD 位置

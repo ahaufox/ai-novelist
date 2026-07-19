@@ -18,7 +18,6 @@ export interface LayoutComponentProps {
 export interface SidebarComponentProps {
   activePanel: string | null;
   setActivePanel: (panel: string | null) => void;
-  onUserClick: () => void;
   onSettingsClick: () => void;
 }
 

@@ -5,7 +5,6 @@ from backend.api.file_api import router as file_router
 from backend.api.history_api import router as history_router
 from backend.api.knowledge_api import router as knowledge_router
 from backend.api.provider_api import router as provider_router
-from backend.api.auth_api import router as auth_router
 
 __all__ = [
     "chat_router",
@@ -15,5 +14,4 @@ __all__ = [
     "history_router",
     "knowledge_router",
     "provider_router",
-    "auth_router",
 ]
