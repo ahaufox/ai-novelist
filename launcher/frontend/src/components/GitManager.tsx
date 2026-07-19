@@ -31,7 +31,7 @@ export default function GitManager() {
   const handleCheckout = async (sha: string) => {
     setCheckoutLoading(true);
     try {
-      const result = await GitDualCheckout(sha, 500);
+      const result = await GitDualCheckout(sha, 5000);
       setGraphData(result || null);
     } catch (e: any) {
       alert('回档失败: ' + (e?.message || e));

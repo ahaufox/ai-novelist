@@ -289,29 +289,14 @@ func extractTrailingSHA(line string) string {
 
 // ========== 结构化分支图（Go 端解析 --graph，前端纯渲染） ==========
 
-// 分支颜色调色板（与前端 BRANCH_COLORS 保持一致）
+// 分支颜色调色板（5 色循环，按 lane 索引直接取模映射）
+// 0绿 1黄 2红 3蓝 4紫 — 一般最多连续 5 分支，多余循环
 var branchColors = []string{
-	"#F4A261", // 橙
-	"#4CAF50", // 绿
-	"#2196F3", // 蓝
-	"#E91E63", // 粉
-	"#9C27B0", // 紫
-	"#00BCD4", // 青
-	"#FF9800", // 琥珀
-	"#8BC34A", // 黄绿
-	"#FFEB3B", // 黄
-	"#FF5722", // 深橙
-}
-
-func hashToColor(seed string) string {
-	h := int32(0)
-	for _, c := range seed {
-		h = ((h << 5) - h) + c
-	}
-	if h < 0 {
-		h = -h
-	}
-	return branchColors[h%int32(len(branchColors))]
+	"#4CAF50", // 0 绿
+	"#FFEB3B", // 1 黄
+	"#F44336", // 2 红
+	"#2196F3", // 3 蓝
+	"#9C27B0", // 4 紫
 }
 
 // GraphOutput 完整的分支图结构化数据，前端直接渲染
@@ -320,6 +305,7 @@ type GraphOutput struct {
 	Rows     int        `json:"rows"`
 	Nodes    []NodeData `json:"nodes"`
 	Segments []SegData  `json:"segments"`
+	RawGraph string     `json:"raw_graph"` // git log --graph 原始 ASCII 输出（调试用）
 }
 
 // NodeData 单个 commit 节点
@@ -550,14 +536,10 @@ func GetStructuredGraph(projectDir string, maxCount int) (*GraphOutput, error) {
 		}
 	}
 
-	// lane → 颜色
+	// lane → 颜色：按 lane 索引直接取模映射，保证相邻 lane 不同色
 	laneColor := make(map[int]string)
 	for lane := 0; lane < maxLane; lane++ {
-		seed := fmt.Sprintf("lane-%d", lane)
-		if branch, ok := laneBranch[lane]; ok {
-			seed = branch
-		}
-		laneColor[lane] = hashToColor(seed)
+		laneColor[lane] = branchColors[lane%len(branchColors)]
 	}
 
 	// 应用颜色到节点
@@ -575,6 +557,7 @@ func GetStructuredGraph(projectDir string, maxCount int) (*GraphOutput, error) {
 		Rows:     totalRows,
 		Nodes:    nodes,
 		Segments: segments,
+		RawGraph: graphOut,
 	}, nil
 }
 

@@ -178,6 +178,7 @@ export namespace gitman {
 	    rows: number;
 	    nodes: NodeData[];
 	    segments: SegData[];
+	    raw_graph: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new GraphOutput(source);
@@ -189,6 +190,7 @@ export namespace gitman {
 	        this.rows = source["rows"];
 	        this.nodes = this.convertValues(source["nodes"], NodeData);
 	        this.segments = this.convertValues(source["segments"], SegData);
+	        this.raw_graph = source["raw_graph"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

@@ -35,7 +35,18 @@ export default function GitGraphCanvas({ data, onCheckout, checkoutLoading }: Pr
   if (!data || !data.graph || data.graph.nodes.length === 0) return null;
 
   const { graph, working_head } = data;
-  const { rows, nodes, segments } = graph;
+  // 节点列表、线段列表、总行数、原始 ASCII
+  const { rows, nodes, segments, raw_graph } = graph;
+
+  // 打印原始 ASCII 分支图到控制台
+  console.log('=== git log --graph 原始 ASCII 输出 ===');
+  console.log(raw_graph);
+
+  console.log('=== segments为 ===')
+  console.log(segments)
+
+  console.log("=== nodes ===")
+  console.log(nodes)
 
   const svgH = PAD_T + rows * ROW_H + 40;
 
@@ -45,7 +56,7 @@ export default function GitGraphCanvas({ data, onCheckout, checkoutLoading }: Pr
   return (
     <div className="git-graph-canvas-container" style={{ position: 'relative', overflow: 'auto', height: '100%' }}>
       <svg width="100%" height={svgH} style={{ fontFamily: 'monospace', display: 'block' }}>
-        {/* 1. 线段（竖线、fork、merge） */}
+        {/* 1. 线段（竖线、分叉、合并），lane "车道"。当 git 历史出现分叉时，不同的分支会占据不同的垂直车道（lane=0、lane=1...），每条车道宽 24px */}
         {segments.map((seg, i) => {
           const sx = x(seg.from_lane);
           const sy = y(seg.row - 1);
@@ -60,7 +71,10 @@ export default function GitGraphCanvas({ data, onCheckout, checkoutLoading }: Pr
           );
         })}
 
-        {/* 2. 圆点 + message + ref 标签 */}
+        {/* 2. 圆点 + message + ref 标签 
+          * row, lane, sha, message, color, refs
+          * 单个 commit 的位置/内容/颜色/分支引用
+          */}
         {nodes.map((n) => {
           const cx = x(n.lane);
           const cy = y(n.row);
