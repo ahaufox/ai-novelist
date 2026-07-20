@@ -855,8 +855,8 @@ const MessageDisplayPanel = () => {
   }
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto py-2.5 flex flex-col relative">
-      <div className="flex-1 overflow-y-auto flex flex-col gap-3">
+    <div className="flex-1 overflow-y-auto py-2.5 flex flex-col relative">
+      <div ref={containerRef} className="flex-1 overflow-y-auto flex flex-col gap-3">
         {messages.map(renderMessage)}
         <div ref={messagesEndRef} />
       </div>
