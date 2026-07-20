@@ -205,13 +205,12 @@ func (a *App) BackendStart() error {
 		return fmt.Errorf("项目仓库不存在: %s，请先点击「检查更新」下载项目", projectDir)
 	}
 
-	// 运行配置迁移（创建/补全 store.yaml、skills.yaml 等配置文件）
-	a.Logf("=== 检查配置迁移 ===")
+	// 运行配置迁移（将 migration/ 模板复制到 data/migration/，供管家 agent 手动处理）
+	a.Logf("=== 复制迁移模板 ===")
 	exeDir := filepath.Dir(projectDir)
 	dataDir := filepath.Join(exeDir, "data")
-	configDir := filepath.Join(dataDir, "config")
-	if err := migration.RunAll(projectDir, dataDir, configDir); err != nil {
-		return fmt.Errorf("配置迁移失败: %w", err)
+	if err := migration.CopyMigrationFolder(projectDir, dataDir); err != nil {
+		return fmt.Errorf("复制迁移模板失败: %w", err)
 	}
 
 	// 检测 Python
