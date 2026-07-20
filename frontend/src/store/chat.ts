@@ -32,6 +32,8 @@ const initialState: ChatState = {
   branchPoints: [],
   summaries: [],
   nextPendingTool: null,
+  // 工具执行状态映射（前端本地跟踪，用于消息气泡中的状态图标）
+  toolExecutionStatusMap: {},
 };
 
 export const chatSlice = createSlice({
@@ -288,6 +290,12 @@ export const chatSlice = createSlice({
       // 直接存储后端计算的待审批工具，前端不做任何推导
       state.nextPendingTool = next_pending_tool ?? null;
     },
+
+    // 设置工具执行状态（前端本地跟踪，用于消息气泡中的状态图标）
+    setToolExecutionStatus: (state: Draft<ChatState>, action: PayloadAction<{ tool_call_id: string; status: 'loading' | 'success' | 'error' | 'rejected' }>) => {
+      const { tool_call_id, status } = action.payload;
+      state.toolExecutionStatusMap[tool_call_id] = status;
+    },
   },
 });
 
@@ -312,6 +320,7 @@ export const {
   setIsStreaming,
   updateMessages,
   setMessagesTree,
+  setToolExecutionStatus,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

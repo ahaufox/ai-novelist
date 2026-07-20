@@ -6,7 +6,7 @@ import { faAngleRight, faAngleUp, faTrash, faRotateRight, faEdit, faCopy, faChec
 import type { RootState } from '../../types';
 import type { Message, StreamChunk, ToolCall, BranchPoint, ContentBlock } from '../../types/langgraph';
 import { setAvailableTools } from '../../store/mode';
-import { createAiMessage, updateAiMessage, updateMessages, setIsStreaming, setMessagesTree } from '../../store/chat';
+import { createAiMessage, updateAiMessage, updateMessages, setIsStreaming, setMessagesTree, setToolExecutionStatus } from '../../store/chat';
 import httpClient from '../../utils/httpClient';
 import UnifiedModal from '../others/UnifiedModal';
 import { tryCompleteJSON } from '../../utils/jsonUtils';
@@ -59,6 +59,9 @@ const MessageDisplayPanel = () => {
   const threadId = useSelector((state: RootState) => state.chatSlice.selectedThreadId) || 'default';
   const selectedModeId = useSelector((state: RootState) => state.modeSlice.selectedModeId) || '管家agent';
   
+  // 从Redux获取工具执行状态映射
+  const toolExecutionStatusMap = useSelector((state: RootState) => state.chatSlice.toolExecutionStatusMap);
+
   // 从Redux获取中断状态
   const interrupts = useSelector((state: RootState) => state.chatSlice.state?.interrupts || emptyInterrupts);
   const isInterrupted = interrupts.length > 0;
@@ -663,9 +666,40 @@ const MessageDisplayPanel = () => {
                   } catch { /* 参数未完整，使用原始字符串 */ }
                   const path = isArgsValid && parsedArgs && typeof parsedArgs === 'object' && 'path' in parsedArgs ? parsedArgs.path : null;
                   
+                  // 工具执行状态图标
+                  const toolCallId = toolCall.id;
+                  const execStatus = toolCallId ? toolExecutionStatusMap[toolCallId] : undefined;
+
+                  const renderStatusIcon = (status: string) => {
+                    switch (status) {
+                      case 'loading':
+                        return (
+                          <span
+                            className="inline-block w-3 h-3 border-2 border-theme-green border-t-transparent rounded-full animate-spin flex-shrink-0"
+                            title="执行中"
+                          />
+                        );
+                      case 'success':
+                        return (
+                          <span className="text-theme-green text-sm font-bold flex-shrink-0" title="执行成功">✓</span>
+                        );
+                      case 'rejected':
+                        return (
+                          <span className="text-theme-red text-sm font-bold flex-shrink-0" title="已拒绝">✕</span>
+                        );
+                      case 'error':
+                        return (
+                          <span className="text-theme-red text-sm font-bold flex-shrink-0" title="执行失败">✕</span>
+                        );
+                      default:
+                        return null;
+                    }
+                  };
+
                   return (
                     <div key={toolIndex} className={toolIndex > 0 ? 'mt-2 pt-2 border-t border-theme-gray3/20' : ''}>
                       <div className="flex items-center gap-2">
+                        {execStatus && renderStatusIcon(execStatus)}
                         <FontAwesomeIcon
                           icon={isExpanded ? faAngleUp : faAngleRight}
                           className="text-xs text-theme-green cursor-pointer hover:text-theme-white"

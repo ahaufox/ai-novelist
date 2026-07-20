@@ -3,18 +3,11 @@ import { readBinaryFrames } from '../../utils/binaryFrameReader';
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { RootState } from '../../types';
 import type { ToolCall } from '../../types/langgraph';
-import { setIsStreaming, createAiMessage, updateAiMessage, addUserMessage, setMessage, setMessagesTree } from '../../store/chat';
+import { setIsStreaming, createAiMessage, updateAiMessage, addUserMessage, setMessage, setMessagesTree, setToolExecutionStatus } from '../../store/chat';
 import { exitDiffMode, saveTabContent, decreaseTab, clearAiSuggestContent } from '../../store/editor';
 import { FILE_TOOLS, useFileToolHandler } from '../../utils/fileToolHandler';
 import { computeDiff, hasDiff } from '../../utils/diffUtils';
 import httpClient from '../../utils/httpClient';
-
-type ToolRequestStatus =
-  | { type: 'idle' }
-  | { type: 'loading' }      // 批准后、结果返回前
-  | { type: 'rejected' }     // 拒绝
-  | { type: 'success' }      // 执行成功
-  | { type: 'error' };       // 执行失败
 
 const ToolRequestPanel = () => {
   const dispatch = useDispatch();
@@ -30,24 +23,15 @@ const ToolRequestPanel = () => {
   const autoApproveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const processingRef = useRef(false);
 
-  // 本地状态：跟踪工具请求的处理状态，实现按钮点击后立即响应
-  const [toolStatus, setToolStatus] = useState<ToolRequestStatus>({ type: 'idle' });
-  // 记录当前正在处理的 tool_call_id，用于识别「新工具请求」vs「当前请求完成」
-  const processingToolCallIdRef = useRef<string | null>(null);
-  // 记录当前处理的工具名称，用于状态栏显示
-  const processingToolNameRef = useRef<string>('');
+  // ★ 本地状态：点击批准/取消后立即隐藏按钮
+  const [buttonsHidden, setButtonsHidden] = useState(false);
 
   const { processFileToolCalls } = useFileToolHandler();
 
-  // 当新的 tool request 到达（与当前处理的 id 不同）时，重置为 idle
+  // 当新的工具请求到达时，恢复按钮显示
   useEffect(() => {
-    if (!currentToolRequest) {
-      // nextPendingTool 变 null，表示当前请求已处理完毕，保留状态图标
-      return;
-    }
-    if (currentToolRequest.tool_call_id !== processingToolCallIdRef.current) {
-      // 全新的工具请求到来，重置为 idle 状态，显示审批按钮
-      setToolStatus({ type: 'idle' });
+    if (currentToolRequest) {
+      setButtonsHidden(false);
     }
   }, [currentToolRequest]);
 
@@ -72,17 +56,15 @@ const ToolRequestPanel = () => {
     const extra = message || '';
     const toolName = currentToolRequest.tool_name;
     const argsStr = currentToolRequest.arguments;
+    const toolCallId = currentToolRequest.tool_call_id;
 
-    // 记录当前处理的工具信息，供状态管理和 useEffect 判断使用
-    processingToolCallIdRef.current = currentToolRequest.tool_call_id;
-    processingToolNameRef.current = toolName;
-
-    // ★ 立即更新 UI：按钮消失，显示状态图标
-    if (approved) {
-      setToolStatus({ type: 'loading' });
-    } else {
-      setToolStatus({ type: 'rejected' });
-    }
+    // ★ 立即隐藏审批按钮（不再等待后端返回）
+    setButtonsHidden(true);
+    // ★ 立即记录工具执行状态到 store，用于消息气泡中的状态图标
+    dispatch(setToolExecutionStatus({
+      tool_call_id: toolCallId,
+      status: approved ? 'loading' : 'rejected',
+    }));
 
     dispatch(setMessage(''));
 
@@ -203,17 +185,21 @@ const ToolRequestPanel = () => {
         }
       });
 
-      // 流式读取成功完成（无异常抛出），批准的执行结果标记为成功
+      // 流式读取成功完成 → 标记为成功（仅当状态仍为 loading 时）
       if (approved) {
-        setToolStatus({ type: 'success' });
+        dispatch(setToolExecutionStatus({
+          tool_call_id: toolCallId,
+          status: 'success',
+        }));
       }
     } catch (error) {
       console.error('工具调用失败:', error);
-      // 批准后执行失败 → 显示 ×
       if (approved) {
-        setToolStatus({ type: 'error' });
+        dispatch(setToolExecutionStatus({
+          tool_call_id: toolCallId,
+          status: 'error',
+        }));
       }
-      // 拒绝状态已经显示 ×，无需变更
     } finally {
       dispatch(setIsStreaming(false));
       processingRef.current = false;
@@ -291,49 +277,10 @@ const ToolRequestPanel = () => {
     );
   };
 
-  // 渲染状态图标（左侧）
-  const renderStatusIcon = () => {
-    switch (toolStatus.type) {
-      case 'loading':
-        return (
-          <span className="inline-block w-4 h-4 mt-0.5 border-2 border-theme-green border-t-transparent rounded-full animate-spin flex-shrink-0" />
-        );
-      case 'success':
-        return (
-          <span className="text-theme-green text-base font-bold flex-shrink-0 mt-0.5">✓</span>
-        );
-      case 'rejected':
-      case 'error':
-        return (
-          <span className="text-theme-red text-base font-bold flex-shrink-0 mt-0.5">✕</span>
-        );
-      default:
-        return null;
-    }
-  };
-
-  // 渲染状态文字说明
-  const renderStatusText = () => {
-    const name = processingToolNameRef.current || currentToolRequest?.tool_name || '';
-    switch (toolStatus.type) {
-      case 'loading':
-        return <span className="text-theme-green text-[13px]">执行中：{name}</span>;
-      case 'success':
-        return <span className="text-theme-green text-[13px]">{name} 执行成功</span>;
-      case 'rejected':
-        return <span className="text-theme-red text-[13px]">已拒绝：{name}</span>;
-      case 'error':
-        return <span className="text-theme-red text-[13px]">{name} 执行失败</span>;
-      default:
-        return null;
-    }
-  };
-
   return (
-    <div className="w-full bg-theme-gray1 p-2">
-      {/* 有 currentToolRequest 且为 idle → 显示审批按钮 */}
-      {currentToolRequest && toolStatus.type === 'idle' && (
-        <div className="space-y-2">
+    <div className="w-full bg-theme-gray1 p-2 space-y-2">
+      {currentToolRequest && !buttonsHidden && (
+        <>
           <div className="text-theme-green text-[13px] font-medium">
             工具请求: {currentToolRequest.tool_name}
           </div>
@@ -352,25 +299,7 @@ const ToolRequestPanel = () => {
               取消
             </button>
           </div>
-        </div>
-      )}
-
-      {/* 非 idle 状态 → 显示状态图标 + 说明文字（按钮已隐藏） */}
-      {toolStatus.type !== 'idle' && (
-        <div className="flex items-start gap-3">
-          {renderStatusIcon()}
-          <div className="flex-1 min-w-0 space-y-1">
-            {currentToolRequest && (
-              <div className="text-theme-green text-[13px] font-medium">
-                工具请求: {currentToolRequest.tool_name}
-              </div>
-            )}
-            {currentToolRequest?.tool_name === 'question' && renderQuestion()}
-            <div>
-              {renderStatusText()}
-            </div>
-          </div>
-        </div>
+        </>
       )}
     </div>
   );

@@ -47,6 +47,8 @@ export interface ChatState {
   isStreaming: boolean;
   /** 下一个待审批的工具请求（后端计算，前端只读，{ tool_call_id, tool_name, arguments } or null） */
   nextPendingTool: { tool_call_id: string; tool_name: string; arguments: string } | null;
+  /** 工具执行状态映射（前端本地跟踪，用于消息气泡中的状态图标） */
+  toolExecutionStatusMap: Record<string, 'loading' | 'success' | 'error' | 'rejected'>;
   /** 分支树：完整消息列表（含所有分支） */
   allMessages: Message[];
   /** 分支树：当前活跃叶子 id */
