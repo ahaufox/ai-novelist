@@ -523,10 +523,14 @@ const MessageDisplayPanel = () => {
     return result;
   };
 
-  // 当消息列表变化时自动滚动到底部
-  const scrollRef = useRef(messages.length);
-  if (messages.length !== scrollRef.current) {
-    scrollRef.current = messages.length;
+  // 当消息列表变化或流式内容更新时自动滚动到底部
+  const scrollRef = useRef({ length: messages.length, lastContentLen: 0 });
+  const lastMsg = messages[messages.length - 1];
+  const lastContentLen = lastMsg?.role === 'assistant'
+    ? (typeof lastMsg.content === 'string' ? lastMsg.content.length : 0)
+    : 0;
+  if (messages.length !== scrollRef.current.length || lastContentLen !== scrollRef.current.lastContentLen) {
+    scrollRef.current = { length: messages.length, lastContentLen };
     setTimeout(scrollToBottom, 0);
   }
 
