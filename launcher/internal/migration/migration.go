@@ -6,14 +6,18 @@ import (
 	"path/filepath"
 )
 
-// CopyMigrationFolder 将项目根目录下的 migration/ 文件夹复制到 data/migration/
-// 后续所有配置同步工作交由管家 agent 手动处理，不再程序化 deep-merge。
+// CopyBuiltinSkill 将项目根目录下的 backend-skill/ 文件夹复制到 data/skills/backend-skill/
+// 每次启动时执行，确保管家 agent 能拿到最新的 skill 定义和迁移模板。
+//
+// 原有复杂的程序化 deep-merge 迁移逻辑已废弃，改为：
+//   - 启动时复制 backend-skill/ → data/skills/（已存在则完全替换）
+//   - 配置迁移工作交由管家 agent 根据 skill 中的「配置迁移」说明手动操作
 //
 // projectDir: 项目代码目录（qingzhu/）
 // dataDir:    数据目录（exeDir/data/）
-func CopyMigrationFolder(projectDir, dataDir string) error {
-	srcDir := filepath.Join(projectDir, "migration")
-	dstDir := filepath.Join(dataDir, "migration")
+func CopyBuiltinSkill(projectDir, dataDir string) error {
+	srcDir := filepath.Join(projectDir, "backend-skill")
+	dstDir := filepath.Join(dataDir, "skills", "backend-skill")
 
 	// 源目录不存在则跳过
 	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
@@ -22,15 +26,15 @@ func CopyMigrationFolder(projectDir, dataDir string) error {
 
 	// 删除目标目录（如有），确保完全覆盖
 	if err := os.RemoveAll(dstDir); err != nil {
-		return fmt.Errorf("清理旧 migration 目录失败: %w", err)
+		return fmt.Errorf("清理旧 backend-skill 目录失败: %w", err)
 	}
 
 	// 递归复制
 	if err := copyDir(srcDir, dstDir); err != nil {
-		return fmt.Errorf("复制 migration 目录失败: %w", err)
+		return fmt.Errorf("复制 backend-skill 目录失败: %w", err)
 	}
 
-	fmt.Printf("[迁移] migration 配置模板已复制到: %s\n", dstDir)
+	fmt.Printf("[迁移] backend-skill 已复制到: %s\n", dstDir)
 	return nil
 }
 

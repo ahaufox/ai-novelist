@@ -1,6 +1,6 @@
 ---
 name: backend-skill
-description: 1. 直接调用后端 API，直接控制项目配置、文件管理、知识库、MCP 等核心功能。2. 介绍项目配置文件，便于直接修改配置文件以实现某些需求。
+description: 1. 直接调用后端 API，直接控制项目配置、文件管理、知识库、MCP 等核心功能。2. 配置迁移：根据迁移模板自动补全配置文件中缺失的字段。3. 介绍项目配置文件，便于直接修改配置文件以实现某些需求。
 ---
 
 # 功能范围
@@ -95,17 +95,80 @@ curl -X POST http://localhost:8000/api/config/store \
 
 ---
 
-## 2. 配置文件
+## 2. 配置迁移
 
-### 2.1 配置文件概览
+> 每次项目启动时，启动器会自动将 `backend-skill/` 目录完整复制到 `data/skills/backend-skill/`。
+> 迁移模板位于本 Skill 的 [`references/`](references/) 目录下，它们是配置文件的最新默认值。
+> **你需要手动检查并执行配置迁移**，将模板中新增的字段补全到实际配置文件中。
 
-参考配置文件位于[references/store_template.yaml]
-实际配置文件位于工作区的 [`config/store.yaml`]（不在此skill文件夹）
+### 2.1 迁移模板说明
+
+| 模板文件 | 对应实际配置文件 | 用途 |
+|---|---|---|
+| [`references/store_migration.yaml`](references/store_migration.yaml) | `config/store.yaml` | 完整的 store 配置默认值（含所有提供商、MCP、主题等） |
+| [`references/store_template.yaml`](references/store_template.yaml) | `config/store.yaml` | 带注释说明的配置参考（适合阅读） |
+| [`references/skills_migration.yaml`](references/skills_migration.yaml) | `config/skills.yaml` | skill 配置默认值 |
+| [`references/dotfiles_migration.yaml`](references/dotfiles_migration.yaml) | `.aiignore` / `.gitignore` / `.userignore` / `.env` | dotfiles 默认内容 |
+
+### 2.2 迁移操作步骤
+
+当项目升级后，你需要执行以下操作：
+
+**步骤 1：对比 `store.yaml`**
+
+用 `read` 工具分别读取：
+- 迁移模板：[`references/store_migration.yaml`](references/store_migration.yaml)
+- 实际配置：`config/store.yaml`
+
+对比两者的差异，重点关注：
+- `provider` 下是否有新的提供商或新的模型
+- `mode` 下是否有新的模式或新的工具
+- `mcpServers` 下是否有新的 MCP 服务器
+- `theme` 下是否有新的配色字段
+
+**步骤 2：补全缺失字段**
+
+使用 `edit` 或 `write` 工具，将模板中有但实际配置中缺失的字段补全到 `config/store.yaml`。
+
+**步骤 3：迁移 `skills.yaml`**
+
+同理，对比：
+- 迁移模板：[`references/skills_migration.yaml`](references/skills_migration.yaml)
+- 实际配置：`config/skills.yaml`
+
+补全缺失的 skill 配置。
+
+**步骤 4：迁移 dotfiles**
+
+对比迁移模板：[`references/dotfiles_migration.yaml`](references/dotfiles_migration.yaml)
+
+检查以下文件是否存在，不存在则按模板创建：
+- `.aiignore`
+- `.gitignore`（注意不要覆盖用户的 gitignore）
+- `.userignore`
+- `.env`（注意不要覆盖已有的 API Key）
+
+### 2.3 注意事项
+
+1. **不要删除用户已有的配置** — 只补全缺失的字段，不要修改用户已有的值
+2. **`store_template.yaml` 是简化版参考**，`store_migration.yaml` 才是完整的默认值，迁移时以 `store_migration.yaml` 为准
+3. **`.env` 迁移要小心** — 只追加缺失的环境变量键，不要覆盖已有的 API Key
+4. **迁移完成后**，告知用户已完成了哪些配置的迁移
 
 
-### 2.2 使用场景与修改方式
+---
 
-场景1. 如果用户要求你操作项目功能，以实现某些任务（比如“帮我创建一个数据库”，“帮我添加一个mcp”）
+## 3. 配置文件
+
+### 3.1 配置文件概览
+
+参考配置文件位于 [`references/store_template.yaml`](references/store_template.yaml)
+实际配置文件位于工作区的 `config/store.yaml`（不在此 skill 文件夹）
+
+
+### 3.2 使用场景与修改方式
+
+场景1. 如果用户要求你操作项目功能，以实现某些任务（比如"帮我创建一个数据库"，"帮我添加一个 mcp"）
 场景2. 项目升级，需要迁移配置文件
 
-你可以用read，write，edit等工具直接操作配置文件
+你可以用 `read`，`write`，`edit` 等工具直接操作配置文件

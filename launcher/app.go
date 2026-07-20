@@ -205,12 +205,13 @@ func (a *App) BackendStart() error {
 		return fmt.Errorf("项目仓库不存在: %s，请先点击「检查更新」下载项目", projectDir)
 	}
 
-	// 运行配置迁移（将 migration/ 模板复制到 data/migration/，供管家 agent 手动处理）
-	a.Logf("=== 复制迁移模板 ===")
+	// 复制内置 skill（backend-skill/ → data/skills/backend-skill/）
+	// 保证管家 agent 能拿到最新的 skill 定义和配置迁移模板
+	a.Logf("=== 复制内置 skill ===")
 	exeDir := filepath.Dir(projectDir)
 	dataDir := filepath.Join(exeDir, "data")
-	if err := migration.CopyMigrationFolder(projectDir, dataDir); err != nil {
-		return fmt.Errorf("复制迁移模板失败: %w", err)
+	if err := migration.CopyBuiltinSkill(projectDir, dataDir); err != nil {
+		return fmt.Errorf("复制内置 skill 失败: %w", err)
 	}
 
 	// 检测 Python
