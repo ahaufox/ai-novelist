@@ -17,6 +17,8 @@ const MessageDisplayPanel = () => {
   const dispatch = useDispatch();
   const { processFileToolCalls } = useFileToolHandler();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true); // 用户是否在底部附近
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [expandedToolResults, setExpandedToolResults] = useState<Set<string>>(new Set());
 
@@ -86,10 +88,23 @@ const MessageDisplayPanel = () => {
     loadTools();
   }, []);
 
-  // 自动滚动到最新消息
+  // 自动滚动到最新消息（仅当用户在底部附近时执行）
   const scrollToBottom = () => {
+    if (!isNearBottomRef.current) return;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  // 监听滚动事件，判断用户是否在底部附近
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const threshold = 100; // 距离底部 100px 以内视为"在底部"
+      isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // 切换工具展开/折叠状态
   const toggleToolExpand = (msgId: string, toolIndex: number) => {
@@ -840,7 +855,7 @@ const MessageDisplayPanel = () => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto py-2.5 flex flex-col relative">
+    <div ref={containerRef} className="flex-1 overflow-y-auto py-2.5 flex flex-col relative">
       <div className="flex-1 overflow-y-auto flex flex-col gap-3">
         {messages.map(renderMessage)}
         <div ref={messagesEndRef} />
