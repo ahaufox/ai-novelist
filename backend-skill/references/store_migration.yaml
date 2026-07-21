@@ -1,6 +1,3 @@
-# 迁移脚本：定义 store.yaml 的所有字段及其默认值
-# 启动时检查用户配置，缺失字段将自动补全
-
 log_level: INFO
 host: 127.0.0.1
 port: 8000
@@ -244,7 +241,7 @@ mcpServers:
 theme:
   colors:
     black: "#000000"
-    green: "#eb7900"
+    green: "#34eb5c"
     green1: "#2ad541"
     white: "#FFFFFF"
     red: "#ff0000"
@@ -264,7 +261,7 @@ theme:
       gray4: "#999999"
       gray5: "#cccccc"
       white: "#FFFFFF"
-      green: "#14eb00"
-      green1: "#d57200"
+      green: "#34eb5c"
+      green1: "#2ad541"
       red: "#ff0000"
       yellow: "#eab308"

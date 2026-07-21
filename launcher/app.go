@@ -164,6 +164,8 @@ func (a *App) GetVersion() string {
 
 // SyncProject 同步项目：克隆（首次）或拉取最新 + 备份仓库
 // 合并了原先的 CheckUpdate + PerformUpdate 两个流程
+// 注意：克隆/拉取成功后不再自动调用 CheckUpdateStatus，
+// 因为刚拉取完检查更新没有意义，用户可点击「检查更新」按钮手动触发
 func (a *App) SyncProject() (*updater.UpdateStatus, error) {
 	if a.config == nil {
 		return nil, fmt.Errorf("配置未加载")
@@ -174,7 +176,7 @@ func (a *App) SyncProject() (*updater.UpdateStatus, error) {
 	if err := updater.PullUpdates(a.config, a); err != nil {
 		return nil, err
 	}
-	return updater.CheckUpdateStatus(a.config, a)
+	return nil, nil
 }
 
 func (a *App) PrepareEnvironment() error {
@@ -212,6 +214,18 @@ func (a *App) BackendStart() error {
 	dataDir := filepath.Join(exeDir, "data")
 	if err := migration.CopyBuiltinSkill(projectDir, dataDir); err != nil {
 		return fmt.Errorf("复制内置 skill 失败: %w", err)
+	}
+
+	// 确保 store.yaml 存在，不存在则从模板创建
+	a.Logf("=== 确保配置文件存在 ===")
+	if err := migration.EnsureStoreConfig(projectDir, dataDir); err != nil {
+		a.Logf("创建配置文件失败（非致命）: %v", err)
+	}
+
+	// 确保 .aiignore/.userignore/.gitignore 存在
+	a.Logf("=== 确保默认忽略文件存在 ===")
+	if err := migration.EnsureDotfiles(projectDir, dataDir); err != nil {
+		a.Logf("创建忽略文件失败（非致命）: %v", err)
 	}
 
 	// 检测 Python

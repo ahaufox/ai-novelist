@@ -38,6 +38,67 @@ func CopyBuiltinSkill(projectDir, dataDir string) error {
 	return nil
 }
 
+// EnsureStoreConfig 确保 data/config/store.yaml 存在，不存在则从项目源码模板创建
+// projectDir: 项目代码目录（qingzhu/）
+// dataDir:    数据目录（exeDir/data/）
+func EnsureStoreConfig(projectDir, dataDir string) error {
+	dst := filepath.Join(dataDir, "config", "store.yaml")
+	if _, err := os.Stat(dst); err == nil {
+		return nil // 已存在，跳过
+	}
+
+	src := filepath.Join(projectDir, "backend-skill", "references", "store_migration.yaml")
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		return fmt.Errorf("配置模板不存在: %s", src)
+	}
+
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("读取配置模板失败: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return fmt.Errorf("创建配置目录失败: %w", err)
+	}
+
+	if err := os.WriteFile(dst, data, 0644); err != nil {
+		return fmt.Errorf("写入配置文件失败: %w", err)
+	}
+
+	fmt.Printf("[迁移] 已从模板创建配置文件: %s\n", dst)
+	return nil
+}
+
+// dotfiles 列表：源文件 → 目标文件名（相对于 dataDir）
+var dotfiles = []struct{ srcName, dstName string }{
+	{".aiignore", ".aiignore"},
+	{".gitignore", ".gitignore"},
+	{".userignore", ".userignore"},
+}
+
+// EnsureDotfiles 确保 data/ 下的 .aiignore/.userignore/.gitignore 存在
+// 不存在则从 backend-skill/references/ 直接复制
+func EnsureDotfiles(projectDir, dataDir string) error {
+	refDir := filepath.Join(projectDir, "backend-skill", "references")
+
+	for _, f := range dotfiles {
+		dst := filepath.Join(dataDir, f.dstName)
+		if _, err := os.Stat(dst); err == nil {
+			continue // 已存在，跳过
+		}
+		src := filepath.Join(refDir, f.srcName)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return fmt.Errorf("读取 %s 失败: %w", src, err)
+		}
+		if err := os.WriteFile(dst, data, 0644); err != nil {
+			return fmt.Errorf("写入 %s 失败: %w", dst, err)
+		}
+		fmt.Printf("[迁移] 已创建默认文件: %s\n", dst)
+	}
+	return nil
+}
+
 // copyDir 递归复制 dir 到 dst
 func copyDir(src, dst string) error {
 	if err := os.MkdirAll(dst, 0755); err != nil {
