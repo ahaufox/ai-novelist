@@ -108,7 +108,9 @@ curl -X POST http://localhost:8000/api/config/store \
 | [`references/store_migration.yaml`](references/store_migration.yaml) | `config/store.yaml` | 完整的 store 配置默认值（含所有提供商、MCP、主题等） |
 | [`references/store_template.yaml`](references/store_template.yaml) | `config/store.yaml` | 带注释说明的配置参考（适合阅读） |
 | [`references/skills_migration.yaml`](references/skills_migration.yaml) | `config/skills.yaml` | skill 配置默认值 |
-| [`references/dotfiles_migration.yaml`](references/dotfiles_migration.yaml) | `.aiignore` / `.gitignore` / `.userignore` / `.env` | dotfiles 默认内容 |
+| [`references/.aiignore`](references/.aiignore) | `.aiignore` | AI 忽略规则默认内容 |
+| [`references/.gitignore`](references/.gitignore) | `.gitignore` | Git 忽略规则默认内容 |
+| [`references/.userignore`](references/.userignore) | `.userignore` | 用户忽略规则默认内容 |
 
 ### 2.2 迁移操作步骤
 
@@ -138,21 +140,18 @@ curl -X POST http://localhost:8000/api/config/store \
 
 补全缺失的 skill 配置。
 
-**步骤 4：迁移 dotfiles**
+**步骤 4：迁移 ignore 文件**
 
-对比迁移模板：[`references/dotfiles_migration.yaml`](references/dotfiles_migration.yaml)
-
-检查以下文件是否存在，不存在则按模板创建：
-- `.aiignore`
-- `.gitignore`（注意不要覆盖用户的 gitignore）
-- `.userignore`
-- `.env`（注意不要覆盖已有的 API Key）
+检查以下文件是否存在，不存在则从模板创建：
+- `.aiignore` → 模板：[`references/.aiignore`](references/.aiignore)
+- `.gitignore` → 模板：[`references/.gitignore`](references/.gitignore)（注意不要覆盖用户的 gitignore）
+- `.userignore` → 模板：[`references/.userignore`](references/.userignore)
 
 ### 2.3 注意事项
 
 1. **不要删除用户已有的配置** — 只补全缺失的字段，不要修改用户已有的值
 2. **`store_template.yaml` 是简化版参考**，`store_migration.yaml` 才是完整的默认值，迁移时以 `store_migration.yaml` 为准
-3. **`.env` 迁移要小心** — 只追加缺失的环境变量键，不要覆盖已有的 API Key
+3. **`.env` 由启动器管理**，不要手动修改
 4. **迁移完成后**，告知用户已完成了哪些配置的迁移
 
 

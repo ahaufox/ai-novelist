@@ -38,35 +38,43 @@ func CopyBuiltinSkill(projectDir, dataDir string) error {
 	return nil
 }
 
-// EnsureStoreConfig 确保 data/config/store.yaml 存在，不存在则从项目源码模板创建
-// projectDir: 项目代码目录（qingzhu/）
-// dataDir:    数据目录（exeDir/data/）
-func EnsureStoreConfig(projectDir, dataDir string) error {
-	dst := filepath.Join(dataDir, "config", "store.yaml")
+// ensureFromTemplate 通用函数：将模板文件复制到目标路径（目标不存在时）
+func ensureFromTemplate(src, dst string, logger func(string, ...interface{})) error {
 	if _, err := os.Stat(dst); err == nil {
 		return nil // 已存在，跳过
 	}
-
-	src := filepath.Join(projectDir, "backend-skill", "references", "store_migration.yaml")
 	if _, err := os.Stat(src); os.IsNotExist(err) {
-		return fmt.Errorf("配置模板不存在: %s", src)
+		if logger != nil {
+			logger("模板不存在，跳过: %s", src)
+		}
+		return nil
 	}
-
 	data, err := os.ReadFile(src)
 	if err != nil {
-		return fmt.Errorf("读取配置模板失败: %w", err)
+		return fmt.Errorf("读取模板失败 %s: %w", src, err)
 	}
-
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return fmt.Errorf("创建配置目录失败: %w", err)
+		return fmt.Errorf("创建目录失败 %s: %w", filepath.Dir(dst), err)
 	}
-
 	if err := os.WriteFile(dst, data, 0644); err != nil {
-		return fmt.Errorf("写入配置文件失败: %w", err)
+		return fmt.Errorf("写入文件失败 %s: %w", dst, err)
 	}
-
-	fmt.Printf("[迁移] 已从模板创建配置文件: %s\n", dst)
+	fmt.Printf("[迁移] 已创建文件: %s\n", dst)
 	return nil
+}
+
+// EnsureStoreConfig 确保 data/config/store.yaml 存在，不存在则从项目源码模板创建
+func EnsureStoreConfig(projectDir, dataDir string) error {
+	src := filepath.Join(projectDir, "backend-skill", "references", "store_migration.yaml")
+	dst := filepath.Join(dataDir, "config", "store.yaml")
+	return ensureFromTemplate(src, dst, nil)
+}
+
+// EnsureSkillsConfig 确保 data/config/skills.yaml 存在，不存在则从模板创建
+func EnsureSkillsConfig(projectDir, dataDir string) error {
+	src := filepath.Join(projectDir, "backend-skill", "references", "skills_migration.yaml")
+	dst := filepath.Join(dataDir, "config", "skills.yaml")
+	return ensureFromTemplate(src, dst, nil)
 }
 
 // dotfiles 列表：源文件 → 目标文件名（相对于 dataDir）

@@ -219,7 +219,13 @@ func (a *App) BackendStart() error {
 	// 确保 store.yaml 存在，不存在则从模板创建
 	a.Logf("=== 确保配置文件存在 ===")
 	if err := migration.EnsureStoreConfig(projectDir, dataDir); err != nil {
-		a.Logf("创建配置文件失败（非致命）: %v", err)
+		a.Logf("创建 store.yaml 失败（非致命）: %v", err)
+	}
+
+	// 确保 skills.yaml 存在
+	a.Logf("=== 确保 skills 配置存在 ===")
+	if err := migration.EnsureSkillsConfig(projectDir, dataDir); err != nil {
+		a.Logf("创建 skills.yaml 失败（非致命）: %v", err)
 	}
 
 	// 确保 .aiignore/.userignore/.gitignore 存在
