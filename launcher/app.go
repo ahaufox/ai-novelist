@@ -44,6 +44,16 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.Logf("[DEBUG] App startup 被调用")
 
+	// 清理 WebView2 缓存，避免官网/青烛标签页因独立缓存显示旧版资源
+	cacheDir := filepath.Join(os.Getenv("APPDATA"), "qingzhu-launcher.exe", "EBWebView")
+	if _, err := os.Stat(cacheDir); err == nil {
+		if err := os.RemoveAll(cacheDir); err != nil {
+			a.Logf("[WARN] 清理 WebView2 缓存失败: %v", err)
+		} else {
+			a.Logf("[INFO] WebView2 缓存已清理: %s", cacheDir)
+		}
+	}
+
 	// 加载配置
 	config, err := a.LoadConfig()
 	if err != nil {

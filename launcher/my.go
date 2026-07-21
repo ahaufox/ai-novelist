@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -14,6 +15,9 @@ var assets embed.FS
 
 func main() {
 	app := NewApp()
+
+	// 禁用 WebView2 磁盘缓存，避免官网/青烛标签页显示旧版资源
+	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disk-cache-size=0 --aggressive-cache-discard")
 
 	err := wails.Run(&options.App{
 		Title:            "白荼",
