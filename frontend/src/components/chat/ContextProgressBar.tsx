@@ -1,13 +1,42 @@
-import { useSelector } from 'react-redux';
+import { useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../../types';
+import httpClient from '../../utils/httpClient';
+import { setAllProvidersData, setSelectedModelId, setSelectedProviderId } from '../../store/provider';
 
 const ContextProgressBar = () => {
+  const dispatch = useDispatch();
+
   // 从Redux获取状态
   const allProvidersData = useSelector((state: RootState) => state.providerSlice.allProvidersData);
   const selectedProviderId = useSelector((state: RootState) => state.providerSlice.selectedProviderId);
   const selectedModelId = useSelector((state: RootState) => state.providerSlice.selectedModelId);
   const allModesData = useSelector((state: RootState) => state.modeSlice.allModesData);
   const selectedModeId = useSelector((state: RootState) => state.chatSlice.selectedModeId);
+
+  // 自包含加载 provider 数据和选中的模型，不依赖其他组件
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [providersResult, selectedModelData] = await Promise.all([
+          httpClient.get('/api/provider/providers'),
+          httpClient.get('/api/chat/selected-model'),
+        ]);
+        if (providersResult) {
+          dispatch(setAllProvidersData(providersResult));
+        }
+        if (selectedModelData?.selectedModel) {
+          dispatch(setSelectedModelId(selectedModelData.selectedModel));
+        }
+        if (selectedModelData?.selectedProvider) {
+          dispatch(setSelectedProviderId(selectedModelData.selectedProvider));
+        }
+      } catch (error) {
+        console.error('[ContextProgressBar] 加载数据失败:', error);
+      }
+    };
+    loadData();
+  }, [dispatch]);
   
   // 从state获取最新AI消息的tokens
   const currentTokens = useSelector((state: RootState) => {
@@ -25,11 +54,11 @@ const ContextProgressBar = () => {
 
   // 计算当前模型的最大上下文长度
   const getModelContextLength = (): number => {
-    if (!selectedProviderId || !selectedModelId) return 4096;
+    if (!selectedProviderId || !selectedModelId) return 0;
     const providerData = allProvidersData[selectedProviderId as string];
-    if (!providerData) return 4096;
+    if (!providerData) return 0;
     const contextLength = providerData.favoriteModels?.chat?.[selectedModelId as string];
-    return typeof contextLength === 'number' ? contextLength : 4096;
+    return typeof contextLength === 'number' ? contextLength : 0;
   };
 
   // 获取当前模式的上下文比例
