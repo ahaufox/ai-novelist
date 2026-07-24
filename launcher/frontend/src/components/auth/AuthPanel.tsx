@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../../store/store';
 import { setAuthenticated, setUser, setAuthLoading } from '../../store/launcher';
@@ -10,6 +10,23 @@ import UserPanel from './UserPanel';
 function AuthPanel() {
   const dispatch = useDispatch();
   const { isAuthenticated, user } = useSelector((state: RootState) => state.launcherSlice);
+
+  // 挂载时检查持久化的登录状态（从 data/auth/tokens.json 读取）
+  useEffect(() => {
+    dispatch(setAuthLoading(true));
+    AuthGetStatus()
+      .then((status) => {
+        dispatch(setAuthenticated(status.isAuthenticated));
+        dispatch(setUser(status.user || null));
+      })
+      .catch(() => {
+        dispatch(setAuthenticated(false));
+        dispatch(setUser(null));
+      })
+      .finally(() => {
+        dispatch(setAuthLoading(false));
+      });
+  }, [dispatch]);
   const [showLogin, setShowLogin] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [showUser, setShowUser] = useState(false);

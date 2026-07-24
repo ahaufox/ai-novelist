@@ -152,7 +152,7 @@ function LayoutComponent({ chapterPanel, editorPanel, chatPanel }: LayoutCompone
 
         {/* 主题设置弹窗 */}
         {showThemeSettings && (
-          <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center">
+          <div className="fixed inset-0 z-[2000] bg-black/50 flex items-center justify-center">
             <div className="w-[90%] max-w-md h-[80%] bg-theme-black rounded-lg shadow-2xl overflow-hidden">
               <ThemeSettingsPanel onClose={() => setShowThemeSettings(false)} />
             </div>
