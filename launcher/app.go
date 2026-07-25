@@ -12,6 +12,7 @@ import (
 
 	"launcher/internal/auth"
 	"launcher/internal/backend"
+	"launcher/internal/embedbin"
 	"launcher/internal/env"
 	"launcher/internal/frontend"
 	"launcher/internal/gitman"
@@ -43,6 +44,24 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.Logf("[DEBUG] App startup 被调用")
+
+	// ── 解压嵌入的 bin/ 工具链（仅首次启动） ──
+	exePath, err := os.Executable()
+	if err == nil {
+		exeDir := filepath.Dir(exePath)
+		if !embedbin.IsExtracted(exeDir) {
+			a.Logf("检测到首次启动，正在解压内置工具链...")
+			if err := embedbin.Extract(exeDir, func(pct int) {
+				a.Progress(pct)
+			}); err != nil {
+				a.Logf("[WARN] 解压内置工具链失败: %v", err)
+			} else {
+				a.Logf("内置工具链解压完成")
+			}
+		} else {
+			a.Logf("内置工具链已就绪，跳过解压")
+		}
+	}
 
 	// 清理 WebView2 缓存，避免官网/青烛标签页因独立缓存显示旧版资源
 	cacheDir := filepath.Join(os.Getenv("APPDATA"), "qingzhu-launcher.exe", "EBWebView")

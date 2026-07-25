@@ -9,12 +9,27 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $launcherDir = Join-Path $projectRoot "launcher"
-$embeddedDir = Join-Path $launcherDir "internal\env\embedded"
+$embedBinDir = Join-Path $launcherDir "internal\embedbin"
+$binDir = Join-Path $projectRoot "bin"
 
-Write-Host "Copying rg.exe to embedded directory..."
-New-Item -ItemType Directory -Path $embeddedDir -Force | Out-Null
-Copy-Item (Join-Path $projectRoot "bin\rg.exe") (Join-Path $embeddedDir "rg.exe") -Force
+# ── Step 1: 打包 bin/ → bin.zip（嵌入到 exe 中） ──
+Write-Host "Packaging bin/ to bin.zip..."
+$zipPath = Join-Path $embedBinDir "bin.zip"
 
+# 清理旧的 bin.zip
+if (Test-Path $zipPath) {
+    Remove-Item $zipPath -Force
+}
+
+# 使用 Compress-Archive 压缩整个 bin/ 目录
+# Compress-Archive 会把 bin/ 下的内容作为 zip 根目录
+# 这样解压后直接得到 rg.exe, node/, git/, vcredist/ 等
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory($binDir, $zipPath, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+
+Write-Host "bin.zip created: $zipPath"
+
+# ── Step 2: 编译 ──
 Write-Host "Building launcher..."
 
 Push-Location $launcherDir

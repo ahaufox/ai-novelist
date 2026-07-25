@@ -91,11 +91,11 @@ const ContextProgressBar = () => {
           {/* 当前使用tokens进度条 */}
           <div
             className="absolute top-0 bottom-0 left-0 bg-theme-green/50 rounded-small transition-all duration-300"
-            style={{ width: `${Math.min((currentTokens / modelContextLength) * 100, 100)}%` }}
+            style={{ width: `${modelContextLength > 0 ? Math.min((currentTokens / modelContextLength) * 100, 100) : 0}%` }}
           ></div>
         </div>
         <span className="text-theme-white text-[12px] whitespace-nowrap">
-          {currentTokens.toLocaleString()} / {modelContextLength.toLocaleString()}
+          {currentTokens.toLocaleString()} / {modelContextLength > 0 ? modelContextLength.toLocaleString() : '...'}
         </span>
       </div>
     </div>
