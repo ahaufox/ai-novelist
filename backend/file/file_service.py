@@ -32,15 +32,10 @@ def resolve_file_path(file_path: str) -> Path:
      
     # 如果是绝对路径，直接使用
     if path.is_absolute():
-        result = path
-    else:
-        # 相对路径，基于 DATA_DIR 解析
-        result = Path(settings.DATA_DIR) / path
-
-    # ===== DEBUG =====
-    print(f"[DEBUG-RESOLVE-PATH] input={file_path!r}, is_absolute={path.is_absolute()}, DATA_DIR={settings.DATA_DIR!r}, result={str(result)!r}", flush=True)
-
-    return result
+        return path
+     
+    # 相对路径，基于 DATA_DIR 解析
+    return Path(settings.DATA_DIR) / path
 
 
 def normalize_to_absolute(file_path: str) -> str:

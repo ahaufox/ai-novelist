@@ -421,23 +421,6 @@ async def _stream_ai_response(thread_id: str, parent_msg_id: str, history: list[
     # 会导致 stderr 管道阻塞，首次请求时前端还没开始读取管道会阻塞 80+ 秒
     logger.info(f"环境信息构建完成，共 {len(messages_with_context)} 条消息")
 
-    # ===== DEBUG: 打印完整的 AI 上下文消息 =====
-    print("=" * 80, flush=True)
-    print("[DEBUG-AI-CONTEXT] === 发给 AI 的完整消息列表 ===", flush=True)
-    for i, msg in enumerate(messages_with_context):
-        role = msg.get("role", "?")
-        content = msg.get("content", "")
-        if isinstance(content, list):
-            content = "[Content Array] " + str(content)
-        content_preview = str(content)[:500]
-        print(f"[DEBUG-AI-CONTEXT] [{i}] role={role}, content_len={len(str(content))}", flush=True)
-        print(f"[DEBUG-AI-CONTEXT] [{i}] content_preview: {content_preview}", flush=True)
-        if msg.get("tool_calls"):
-            print(f"[DEBUG-AI-CONTEXT] [{i}] tool_calls: {msg['tool_calls']}", flush=True)
-        if msg.get("tool_call_id"):
-            print(f"[DEBUG-AI-CONTEXT] [{i}] tool_call_id: {msg['tool_call_id']}", flush=True)
-    print("=" * 80, flush=True)
-
     _t = time.perf_counter()
     call_kwargs = {
         "model": litellm_model,
@@ -743,9 +726,6 @@ async def function_calling(request: FunctionCallingRequest):
     thread_id = settings.get_config("thread_id")
     logger.info(f"处理工具调用: tool_call_id={request.tool_call_id}, approved={request.approved}")
 
-    # ===== DEBUG: 打印 AI 传的工具调用参数 =====
-    print(f"[DEBUG-TOOL-CALL] tool_call_id={request.tool_call_id}, approved={request.approved}", flush=True)
-
     # 1. 执行/拒绝工具
     result = None
     if request.approved:
@@ -763,9 +743,6 @@ async def function_calling(request: FunctionCallingRequest):
                         arguments = tc.get("function", {}).get("arguments", "{}")
                         break
                 break
-
-        # ===== DEBUG: 打印 AI 实际传入的工具参数 =====
-        print(f"[DEBUG-TOOL-ARGS] tool_name={tool_name}, arguments={arguments}", flush=True)
         result = await _execute_tool(
             tool_dict,
             tool_name,

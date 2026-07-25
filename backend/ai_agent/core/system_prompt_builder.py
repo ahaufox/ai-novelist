@@ -211,9 +211,6 @@ class SystemPromptBuilder:
         try:
             # 获取data目录路径
             data_path = self.data_dir
-
-            # ===== DEBUG =====
-            print(f"[DEBUG-FILE-TREE] data_path = {data_path!r}", flush=True)
              
             # 确保data目录存在
             os.makedirs(data_path, exist_ok=True)
@@ -224,9 +221,6 @@ class SystemPromptBuilder:
              
             # 格式化文件树为文本，包含统计信息让AI了解显示范围
             tree_text = format_tree_for_prompt(file_tree_result, data_path)
-
-            # ===== DEBUG =====
-            print(f"[DEBUG-FILE-TREE] 格式化后的文件树:\n{tree_text}", flush=True)
              
             # 如果文件树为空，显示"暂无文件"
             if not file_tree_result.tree:
