@@ -17,25 +17,30 @@ logger = logging.getLogger(__name__)
 
 def resolve_file_path(file_path: str) -> Path:
     """解析文件路径，支持相对路径和绝对路径
-    
+     
     规则：
     - 绝对路径：直接使用（如 /home/user/file.txt）
     - 相对路径：基于 DATA_DIR 解析（如 file.txt -> {DATA_DIR}/file.txt）
-    
+     
     Args:
         file_path: 输入的文件路径（相对或绝对）
-        
+         
     Returns:
         Path: 解析后的完整路径
     """
     path = Path(file_path)
-    
+     
     # 如果是绝对路径，直接使用
     if path.is_absolute():
-        return path
-    
-    # 相对路径，基于 DATA_DIR 解析
-    return Path(settings.DATA_DIR) / path
+        result = path
+    else:
+        # 相对路径，基于 DATA_DIR 解析
+        result = Path(settings.DATA_DIR) / path
+
+    # ===== DEBUG =====
+    print(f"[DEBUG-RESOLVE-PATH] input={file_path!r}, is_absolute={path.is_absolute()}, DATA_DIR={settings.DATA_DIR!r}, result={str(result)!r}", flush=True)
+
+    return result
 
 
 def normalize_to_absolute(file_path: str) -> str:

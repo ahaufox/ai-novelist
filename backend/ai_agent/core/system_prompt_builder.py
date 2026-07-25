@@ -197,7 +197,7 @@ class SystemPromptBuilder:
     
     async def get_file_tree_content(self) -> str:
         """获取格式化的文件树内容
-        
+         
         Returns:
             格式化的文件树文本，如：
             ```
@@ -211,23 +211,29 @@ class SystemPromptBuilder:
         try:
             # 获取data目录路径
             data_path = self.data_dir
-            
+
+            # ===== DEBUG =====
+            print(f"[DEBUG-FILE-TREE] data_path = {data_path!r}", flush=True)
+             
             # 确保data目录存在
             os.makedirs(data_path, exist_ok=True)
-            
+             
             # 获取文件树（返回 FileTreeResult 对象，包含统计信息）
             from backend.file.smart_file_tree import format_tree_for_prompt
             file_tree_result = await get_file_tree_for_ai(data_path, data_path)
-            
+             
             # 格式化文件树为文本，包含统计信息让AI了解显示范围
             tree_text = format_tree_for_prompt(file_tree_result, data_path)
-            
+
+            # ===== DEBUG =====
+            print(f"[DEBUG-FILE-TREE] 格式化后的文件树:\n{tree_text}", flush=True)
+             
             # 如果文件树为空，显示"暂无文件"
             if not file_tree_result.tree:
                 tree_text = "[当前工作区文件结构]:\n暂无文件"
-            
+             
             return tree_text
-            
+             
         except Exception as e:
             logger.error(f"获取文件树内容时出错: {e}")
             return "[当前工作区文件结构]:\n(获取文件树出错)"
